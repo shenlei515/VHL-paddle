@@ -1,5 +1,5 @@
 from __future__ import print_function
-import torch
+import paddle
 import numpy as np
 import time
 import math
@@ -44,7 +44,7 @@ class TopKCompressor():
 
     def _process_data_after_residual(self, name, data):
         if name not in self.zero_conditions:
-            self.zero_conditions[name] = torch.ones(data.numel(), dtype=torch.float32, device=data.device) 
+            self.zero_conditions[name] = paddle.ones(data.numel(), dtype=paddle.float32, device=data.device) 
         zero_condition = self.zero_conditions[name]
         zero_condition.fill_(1.0)
         zero_condition[self.indexes[name]] = 0.0
@@ -60,9 +60,9 @@ class TopKCompressor():
 
     # def compress(self, tensor, name=None, sigma_scale=2.5, ratio=0.05):
     #     start = time.time()
-    #     with torch.no_grad():
+    #     with paddle.no_grad():
     #         if name not in self.residuals:
-    #             self.residuals[name] = torch.zeros_like(tensor.data)
+    #             self.residuals[name] = paddle.zeros_like(tensor.data)
     #         # top-k solution
     #         numel = tensor.numel()
     #         k = max(int(numel * ratio), 1)
@@ -70,7 +70,7 @@ class TopKCompressor():
     #         #tensor.data.add_(TopKCompressor.residuals[name].data)
     #         self._process_data_before_selecting(name, tensor.data)
 
-    #         values, indexes = torch.topk(torch.abs(tensor.data), k=k)
+    #         values, indexes = paddle.topk(paddle.abs(tensor.data), k=k)
     #         values = tensor.data[indexes]
 
     #         self.residuals[name].data = tensor.data + 0.0 
@@ -84,13 +84,13 @@ class TopKCompressor():
 
     def compress(self, tensor, name=None, sigma_scale=2.5, ratio=0.05):
         start = time.time()
-        with torch.no_grad():
+        with paddle.no_grad():
             # top-k solution
             numel = tensor.numel()
             k = max(int(numel * ratio), 1)
             self.current_ratio = ratio
 
-            values, indexes = torch.topk(torch.abs(tensor.data), k=k)
+            values, indexes = paddle.topk(paddle.abs(tensor.data), k=k)
             values = tensor.data[indexes]
 
             self.values[name] = values
@@ -108,17 +108,17 @@ class TopKCompressor():
             Remember to do unflatter after decompress
         '''
         if shape is None:
-            decompress_tensor = torch.zeros(
+            decompress_tensor = paddle.zeros(
                 self.shapes[name], dtype=tensor.dtype, device=tensor.device).view(-1)
             decompress_tensor[indexes] = tensor
-            # decompress_tensor = torch.zeros(self.shapes[name]).view(-1)
+            # decompress_tensor = paddle.zeros(self.shapes[name]).view(-1)
             # decompress_tensor[indexes] = tensor.type(decompress_tensor.dtype)
             return decompress_tensor
         else:
-            decompress_tensor = torch.zeros(
+            decompress_tensor = paddle.zeros(
                 self.shapes[name], dtype=tensor.dtype, device=tensor.device).view(-1)
             decompress_tensor[indexes] = tensor
-            # decompress_tensor = torch.zeros(self.shapes[name]).view(-1)
+            # decompress_tensor = paddle.zeros(self.shapes[name]).view(-1)
             # decompress_tensor[indexes] = tensor.type(decompress_tensor.dtype)
             return decompress_tensor
 
@@ -143,14 +143,14 @@ class TopKCompressor():
 
     def get_residuals(self, name, like_tensor):
         if name not in self.residuals:
-            self.residuals[name] = torch.zeros_like(like_tensor.data)
+            self.residuals[name] = paddle.zeros_like(like_tensor.data)
         return self.residuals[name]
 
     def add_residuals(self, included_indexes, name):
-        with torch.no_grad():
+        with paddle.no_grad():
             residuals = self.residuals[name]
             if type(included_indexes) is np.ndarray:
-                indexes_t = torch.from_numpy(included_indexes).to(device=residuals.device).long()
+                indexes_t = paddle.from_numpy(included_indexes).to(device=residuals.device).long()
             else:
                 indexes_t = included_indexes
             values = self.values[name]
@@ -158,7 +158,7 @@ class TopKCompressor():
             residuals.data[self.indexes[name]] += values.data
             #selected_indexes = TopKCompressor.indexes[name][indexes_t]
             #residuals.data[selected_indexes] = 0.0 
-            #logger.info('residuals after: %f', torch.norm(TopKCompressor.residuals[name].data))
+            #logger.info('residuals after: %f', paddle.norm(TopKCompressor.residuals[name].data))
 
 
 
@@ -198,9 +198,9 @@ class EFTopKCompressor(TopKCompressor):
 
     def compress(self, tensor, name=None, sigma_scale=2.5, ratio=0.05):
         start = time.time()
-        with torch.no_grad():
+        with paddle.no_grad():
             if name not in self.residuals:
-                self.residuals[name] = torch.zeros_like(tensor.data)
+                self.residuals[name] = paddle.zeros_like(tensor.data)
             # top-k solution
             numel = tensor.numel()
             k = max(int(numel * ratio), 1)
@@ -208,7 +208,7 @@ class EFTopKCompressor(TopKCompressor):
             #tensor.data.add_(TopKCompressor.residuals[name].data)
             self._process_data_before_selecting(name, tensor.data)
 
-            values, indexes = torch.topk(torch.abs(tensor.data), k=k)
+            values, indexes = paddle.topk(paddle.abs(tensor.data), k=k)
             values = tensor.data[indexes]
 
             self.residuals[name].data = tensor.data + 0.0 
@@ -257,10 +257,10 @@ class SequenceCompressor(TopKCompressor):
             if start_index + k > numel:
                 k = numel - start_index
             return start_index, k
-        with torch.no_grad():
+        with paddle.no_grad():
             self.current_ratio = ratio
             if name not in self.residuals:
-                self.residuals[name] = torch.zeros_like(tensor.data)
+                self.residuals[name] = paddle.zeros_like(tensor.data)
             if name not in self.iterations:
                 self.iterations[name] = 0
             tensor.add_(self.residuals[name].data)
@@ -268,7 +268,7 @@ class SequenceCompressor(TopKCompressor):
             numel = tensor.numel()
             start_index, k = _get_start_index(iteration, ratio, numel)
             if name not in self.zero_conditions:
-                self.zero_conditions[name] = torch.ones(numel, dtype=torch.float32, device=tensor.device) 
+                self.zero_conditions[name] = paddle.ones(numel, dtype=paddle.float32, device=tensor.device) 
             zero_condition = self.zero_conditions[name]
             zero_condition.fill_(1.)
             zero_condition[start_index:start_index+k] = 0.
@@ -294,19 +294,19 @@ class GaussianCompressor(TopKCompressor):
         self.sparsities = []
 
     def compress(self, tensor, name=None, sigma_scale=3, ratio=0.05):
-        with torch.no_grad():
+        with paddle.no_grad():
             if name not in self.residuals:
-                self.residuals[name] = torch.zeros_like(tensor.data)
+                self.residuals[name] = paddle.zeros_like(tensor.data)
             numel = tensor.numel()
             k = max(int(numel * ratio), 1)
             self.current_ratio = ratio
 
             tensor.add_(self.residuals[name].data)
 
-            std = torch.std(tensor)
-            mean = torch.mean(tensor)
+            std = paddle.std(tensor)
+            mean = paddle.mean(tensor)
             left_thres, right_thres = utils.gen_threshold_from_normal_distribution(1-ratio, float(mean), float(std))
-            abs_tensor = torch.abs(tensor)
+            abs_tensor = paddle.abs(tensor)
             loops = 0
             while loops < 5:
                 one_indexes = abs_tensor > right_thres
@@ -340,14 +340,14 @@ class RandomKCompressor(TopKCompressor):
         self.counter = 0
 
     # def compress(self, tensor, name=None, sigma_scale=3, ratio=0.05):
-    #     with torch.no_grad():
+    #     with paddle.no_grad():
     #         if name not in RandomKCompressor.residuals:
-    #             self.residuals[name] = torch.zeros_like(tensor.data)
+    #             self.residuals[name] = paddle.zeros_like(tensor.data)
     #         numel = tensor.numel()
     #         k = max(int(numel * ratio), 1)
     #         self.current_ratio = ratio
 
-    #         perm = torch.randperm(numel, device=tensor.device)
+    #         perm = paddle.randperm(numel, device=tensor.device)
     #         self.counter += 1
     #         indexes = perm[:k]
     #         values = tensor.data[indexes] 
@@ -361,12 +361,12 @@ class RandomKCompressor(TopKCompressor):
     #         return tensor, indexes, values
 
     def compress(self, tensor, name=None, sigma_scale=3, ratio=0.05):
-        with torch.no_grad():
+        with paddle.no_grad():
             numel = tensor.numel()
             k = max(int(numel * ratio), 1)
             self.current_ratio = ratio
 
-            perm = torch.randperm(numel, device=tensor.device)
+            perm = paddle.randperm(numel, device=tensor.device)
             self.counter += 1
             indexes = perm[:k]
             values = tensor.data[indexes] 
@@ -386,15 +386,15 @@ class RandomKECCompressor(TopKCompressor):
 
 
     def compress(self, tensor, name=None, sigma_scale=3, ratio=0.05):
-        with torch.no_grad():
+        with paddle.no_grad():
             if name not in self.residuals:
-                self.residuals[name] = torch.zeros_like(tensor.data)
+                self.residuals[name] = paddle.zeros_like(tensor.data)
             numel = tensor.numel()
             k = max(int(numel * ratio), 1)
             self.current_ratio = ratio
 
             tensor.add_(self.residuals[name].data)
-            perm = torch.randperm(numel, device=tensor.device)
+            perm = paddle.randperm(numel, device=tensor.device)
             self.counter += 1
             indexes = perm[:k]
             values = tensor.data[indexes] 
@@ -411,18 +411,18 @@ class RandomKSameCompressor(TopKCompressor):
         self.counter = 0
 
     def compress(self, tensor, name=None, sigma_scale=3, ratio=0.05):
-        with torch.no_grad():
+        with paddle.no_grad():
             if name not in self.residuals:
-                self.residuals[name] = torch.zeros_like(tensor.data)
+                self.residuals[name] = paddle.zeros_like(tensor.data)
             numel = tensor.numel()
             k = max(int(numel * ratio), 1)
             self.current_ratio = ratio
-            #torch.manual_seed(RandomKSCompressor.counter)
+            #paddle.manual_seed(RandomKSCompressor.counter)
             #if tensor.is_cuda:
-            #    torch.cuda.manual_seed_all(RandomKSCompressor.counter)
-            torch.manual_seed(self.counter)
+            #    paddle.cuda.manual_seed_all(RandomKSCompressor.counter)
+            paddle.manual_seed(self.counter)
             self.counter += 1
-            perm = torch.randperm(numel, device=tensor.device)
+            perm = paddle.randperm(numel, device=tensor.device)
             indexes = perm[:k]
             values = tensor.data[indexes] 
             self.residuals[name].data = tensor.data + 0.0 
@@ -443,18 +443,18 @@ class RandomKSameECCompressor(TopKCompressor):
         self.counter = 0
 
     def compress(self, tensor, name=None, sigma_scale=3, ratio=0.05):
-        with torch.no_grad():
+        with paddle.no_grad():
             if name not in self.residuals:
-                self.residuals[name] = torch.zeros_like(tensor.data)
+                self.residuals[name] = paddle.zeros_like(tensor.data)
             numel = tensor.numel()
             k = max(int(numel * ratio), 1)
             self.current_ratio = ratio
             tensor.add_(self.residuals[name].data)
-            #torch.manual_seed(RandomKSERCompressor.counter)
+            #paddle.manual_seed(RandomKSERCompressor.counter)
             #if tensor.is_cuda:
-            #    torch.cuda.manual_seed_all(RandomKSERCompressor.counter)
+            #    paddle.cuda.manual_seed_all(RandomKSERCompressor.counter)
             #RandomKSERCompressor.counter += 1
-            perm = torch.randperm(numel, device=tensor.device)
+            perm = paddle.randperm(numel, device=tensor.device)
             indexes = perm[:k]
             values = tensor.data[indexes] 
             self.residuals[name].data = tensor.data + 0.0 
@@ -479,26 +479,26 @@ class DGCSamplingCompressor(TopKCompressor):
         data.add_(self.residuals[name].data)
 
     def compress(self, tensor, name=None, sigma_scale=3, ratio=0.05):
-        with torch.no_grad():
+        with paddle.no_grad():
             if name not in self.residuals:
-                self.residuals[name] = torch.zeros_like(tensor.data)
+                self.residuals[name] = paddle.zeros_like(tensor.data)
             numel = tensor.numel()
             k = max(int(numel * ratio), 1)
             self.current_ratio = ratio
 
             self._process_data_before_selecting(name, tensor.data)
 
-            abs_values = torch.abs(tensor.data)
+            abs_values = paddle.abs(tensor.data)
 
             # First step sampling
-            perm = torch.randperm(numel, device=tensor.device)
+            perm = paddle.randperm(numel, device=tensor.device)
             if ratio >= 0.01:
                 fk=k
             else:
                 fk = int(numel * 0.01)
             sampled_indexes = perm[0:fk]
             sampled_values = abs_values[sampled_indexes]
-            tmpvalues, tmpindexes = torch.topk(sampled_values, k=k)
+            tmpvalues, tmpindexes = paddle.topk(sampled_values, k=k)
 
             thres = tmpvalues[k-1]
             bool_indexes = abs_values > thres
@@ -506,7 +506,7 @@ class DGCSamplingCompressor(TopKCompressor):
             num_k = len(indexes)
             if num_k > 4*k/3:
                 tmpvalues = abs_values[indexes] 
-                values, tmpindexes = torch.topk(tmpvalues, k=k)
+                values, tmpindexes = paddle.topk(tmpvalues, k=k)
                 indexes = indexes[tmpindexes]
 
             values = tensor.data[indexes] 
@@ -531,7 +531,7 @@ class DGCSamplingDDCompressor(DGCSamplingCompressor):
 
     def _process_data_before_selecting(self, name, data):
         if name not in self.delay_counters:
-            self.delay_counters[name] = torch.ones_like(data)
+            self.delay_counters[name] = paddle.ones_like(data)
         data.mul_(self.delay_counters[name].data)
         data.add_(self.residuals[name].data)
 
@@ -563,7 +563,7 @@ class TopKDDCompressor(TopKCompressor):
     def _process_data_before_selecting(self, name, data):
         super()._process_data_before_selecting(name, data)
         if name not in self.delay_counters:
-            self.delay_counters[name] = torch.ones_like(data)
+            self.delay_counters[name] = paddle.ones_like(data)
         data.mul_(self.delay_counters[name].data)
 
     def _process_data_after_residual(self, name, data):
@@ -597,9 +597,9 @@ class EFTopKDDCompressor(TopKCompressor):
 
     def compress(self, tensor, name=None, sigma_scale=2.5, ratio=0.05):
         start = time.time()
-        with torch.no_grad():
+        with paddle.no_grad():
             if name not in self.residuals:
-                self.residuals[name] = torch.zeros_like(tensor.data)
+                self.residuals[name] = paddle.zeros_like(tensor.data)
             # top-k solution
             numel = tensor.numel()
             k = max(int(numel * ratio), 1)
@@ -607,7 +607,7 @@ class EFTopKDDCompressor(TopKCompressor):
             #tensor.data.add_(TopKCompressor.residuals[name].data)
             self._process_data_before_selecting(name, tensor.data)
 
-            values, indexes = torch.topk(torch.abs(tensor.data), k=k)
+            values, indexes = paddle.topk(paddle.abs(tensor.data), k=k)
             values = tensor.data[indexes]
 
             self.residuals[name].data = tensor.data + 0.0 
@@ -621,7 +621,7 @@ class EFTopKDDCompressor(TopKCompressor):
 
     def _process_data_before_selecting(self, name, data):
         if name not in self.delay_counters:
-            self.delay_counters[name] = torch.ones_like(data)
+            self.delay_counters[name] = paddle.ones_like(data)
         data.mul_(self.delay_counters[name].data)
         data.add_(self.residuals[name].data)
 
@@ -675,7 +675,7 @@ class EFTopKLookForwardCompressor(TopKCompressor):
 
     def _process_data_before_selecting(self, name, data):
         if name not in self.delay_counters:
-            self.delay_counters[name] = torch.ones_like(data)
+            self.delay_counters[name] = paddle.ones_like(data)
         data.mul_(self.delay_counters[name].data)
         data.add_(self.residuals[name].data)
 
@@ -701,7 +701,7 @@ class EFTopKDecayCompressor(TopKCompressor):
 
     def _process_data_before_selecting(self, name, data):
         if name not in self.delay_counters:
-            self.delay_counters[name] = torch.ones_like(data)
+            self.delay_counters[name] = paddle.ones_like(data)
         data.mul_(self.delay_counters[name].data)
         data.add_(self.residuals[name].data)
 
@@ -713,7 +713,7 @@ class EFTopKDecayCompressor(TopKCompressor):
         #topk_norm = float(self.values[name].norm())
         #ratio = (2 * x_norm * topk_norm - topk_norm*topk_norm) / (x_norm * x_norm)
         #delta = (2.0 * x_norm * topk_norm - topk_norm*topk_norm) / (x_norm * x_norm)
-        #ratio = torch.sqrt((delta*delta*delta - delta*delta + 2) / delta) / (1-delta+1e-6)
+        #ratio = paddle.sqrt((delta*delta*delta - delta*delta + 2) / delta) / (1-delta+1e-6)
         ratio = 0. #1e-3 #delta/(1.0-delta) 
         delay_counter.fill_(1.0) 
         delay_counter[self.indexes[name]] = ratio #self.current_ratio
@@ -731,17 +731,17 @@ class AdaSamplingCompressor(TopKCompressor):
         data.add_(self.residuals[name].data)
 
     def compress(self, tensor, name=None, sigma_scale=3, ratio=0.05):
-        with torch.no_grad():
+        with paddle.no_grad():
             if name not in self.residuals:
-                self.residuals[name] = torch.zeros_like(tensor.data)
+                self.residuals[name] = paddle.zeros_like(tensor.data)
             numel = tensor.numel()
             k = max(int(numel * ratio), 1)
             self.current_ratio = ratio
 
             self._process_data_before_selecting(name, tensor.data)
 
-            abs_values = torch.abs(tensor.data)
-            values, indexes = torch.topk(abs_values, k=k)
+            abs_values = paddle.abs(tensor.data)
+            values, indexes = paddle.topk(abs_values, k=k)
             values = tensor.data[indexes]
 
             self.residuals[name].data = tensor.data + 0.0 
@@ -770,8 +770,8 @@ class QuantizationCompressor(object):
         # calculate the quantization value of tensor `x` at level `log_2 s`.
         level_float = s * x.abs() / norm
         # floor to quantization
-        previous_level = torch.floor(level_float)
-        return torch.sign(x) * norm * previous_level / s
+        previous_level = paddle.floor(level_float)
+        return paddle.sign(x) * norm * previous_level / s
 
     def compress(self, tensor, name=None, quantize_level=32, is_biased=True):
         if quantize_level != 32:
@@ -805,9 +805,9 @@ class QSGDCompressor(object):
         # calculate the quantization value of tensor `x` at level `log_2 s`.
         level_float = s * x.abs() / norm
         # floor to quantization
-        previous_level = torch.floor(level_float)
+        previous_level = paddle.floor(level_float)
         # add the stochastic quantization, to preserve the value in expectation.
-        is_next_level = (torch.rand_like(x) < (level_float - previous_level)).float()
+        is_next_level = (paddle.rand_like(x) < (level_float - previous_level)).float()
         new_level = previous_level + is_next_level
 
         scale = 1
@@ -815,7 +815,7 @@ class QSGDCompressor(object):
             d = x.nelement()
             # Variance bound of QSGD
             scale = 1.0 / (min(d / (s ** 2), math.sqrt(d) / s) + 1.0)
-        return scale * torch.sign(x) * norm * new_level / s
+        return scale * paddle.sign(x) * norm * new_level / s
 
     def qsgd_quantize_numpy(self, x, s, is_biased=False):
         """quantize the tensor x in d level on the absolute value coef wise"""
@@ -867,7 +867,7 @@ class SignCompressor(object):
         pass
 
     def packing(self, src_tensor):
-        src_tensor = torch.sign(src_tensor)
+        src_tensor = paddle.sign(src_tensor)
         packed_data = src_tensor
         src_tensor_size = src_tensor.size()
         src_tensor = src_tensor.view(-1)
@@ -875,12 +875,12 @@ class SignCompressor(object):
         add_elm = 32 - (src_len % 32)
         if src_len % 32 == 0:
             add_elm = 0
-        new_tensor = torch.zeros([add_elm], dtype=torch.float32, device=src_tensor.device)
-        src_tensor = torch.cat((src_tensor, new_tensor), 0)
+        new_tensor = paddle.zeros([add_elm], dtype=paddle.float32, device=src_tensor.device)
+        src_tensor = paddle.cat((src_tensor, new_tensor), 0)
         src_tensor = src_tensor.view(32, -1)
-        src_tensor = src_tensor.to(dtype=torch.int32)
+        src_tensor = src_tensor.to(dtype=paddle.int32)
         dst_tensor = bit2byte.packing(src_tensor)
-        dst_tensor = dst_tensor.to(dtype=torch.int32)
+        dst_tensor = dst_tensor.to(dtype=paddle.int32)
         return dst_tensor, packed_data
 
     def unpacking(self, src_tensor, src_tensor_size):
@@ -889,8 +889,8 @@ class SignCompressor(object):
         if src_element_num % 32 == 0:
             add_elm = 0
         src_tensor = src_tensor.int()
-        new_tensor = torch.ones(
-            src_element_num + add_elm, device=src_tensor.device, dtype=torch.int32
+        new_tensor = paddle.ones(
+            src_element_num + add_elm, device=src_tensor.device, dtype=paddle.int32
         )
         new_tensor = new_tensor.view(32, -1)
         new_tensor = bit2byte.unpacking(src_tensor, new_tensor)
@@ -903,20 +903,20 @@ class SignCompressor(object):
 
     def majority_vote(self, src_tensor_list):
         voter_num = len(src_tensor_list)
-        src_tensor = torch.stack(src_tensor_list)
+        src_tensor = paddle.stack(src_tensor_list)
         src_tensor = src_tensor.view(-1)
         full_size = 32 * len(src_tensor)
-        new_tensor = torch.ones(full_size, device=src_tensor.device, dtype=torch.int32)
+        new_tensor = paddle.ones(full_size, device=src_tensor.device, dtype=paddle.int32)
         new_tensor = new_tensor.view(32, -1)
         new_tensor = bit2byte.unpacking(src_tensor, new_tensor)
         new_tensor = -new_tensor.add_(-1)
         # sum
         new_tensor = new_tensor.permute(1, 0).contiguous().view(voter_num, -1)
-        new_tensor = torch.sum(new_tensor, 0)
+        new_tensor = paddle.sum(new_tensor, 0)
         new_tensor = new_tensor.view(-1, 32).permute(1, 0)
-        new_tensor = torch.sign(new_tensor)
+        new_tensor = paddle.sign(new_tensor)
         new_tensor = bit2byte.packing(new_tensor)
-        new_tensor = new_tensor.to(dtype=torch.int32)
+        new_tensor = new_tensor.to(dtype=paddle.int32)
         return new_tensor
 
     def element_num(self, size):
@@ -945,7 +945,7 @@ class EFSignCompressor(SignCompressor):
 
     def _process_data_before_selecting(self, name, data):
         if name not in self.residuals:
-            self.residuals[name] = torch.zeros_like(data)
+            self.residuals[name] = paddle.zeros_like(data)
         data.add_(self.residuals[name].data)
 
     def _process_data_after_residual(self, name, packed_data, original_tensor):
@@ -961,9 +961,9 @@ class EFDecaySignCompressor(EFSignCompressor):
 
     def _process_data_before_selecting(self, name, data):
         if name not in self.residuals:
-            self.residuals[name] = torch.zeros_like(data)
+            self.residuals[name] = paddle.zeros_like(data)
         if name not in self.delay_counters:
-            self.delay_counters[name] = torch.ones_like(data)
+            self.delay_counters[name] = paddle.ones_like(data)
         data.mul_(self.delay_counters[name].data)
         data.add_(self.residuals[name].data)
 
@@ -1039,7 +1039,7 @@ if __name__ == '__main__':
     #test_gaussion_thres()
     compressor_str = 'signum'
     compressor = compressors[compressor_str]()
-    z = torch.rand(128, 256)
+    z = paddle.rand(128, 256)
     compressed_tensor, _, _ = compressor.compress(z)
     print('compressed shape: ', compressed_tensor.shape)
     decompressed_tensor = compressor.decompress(compressed_tensor, z.size())

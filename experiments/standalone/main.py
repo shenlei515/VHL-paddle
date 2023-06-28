@@ -11,7 +11,7 @@ import traceback
 import numpy as np
 import psutil
 import setproctitle
-import torch
+import paddle
 import wandb
 # add the FedML root directory to the python path
 
@@ -113,13 +113,15 @@ if __name__ == "__main__":
     # We fix these two, so that we can reproduce the result.
     random.seed(seed)
     np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic =True
+    paddle.seed(seed)
+    # paddle.set_cuda_rng_state(seed)
+    paddle.set_flags({"FLAGS_cudnn_deterministic":True})
 
-    device = torch.device("cuda:" + str(cfg.gpu_index) if torch.cuda.is_available() else "cpu")
 
+    # device = paddle.set_device("gpu:" + str(cfg.gpu_index) if paddle.is_compiled_with_cuda() else "cpu")
+    device = paddle.set_device("cpu")
+    print("device=", device)
+    print("device in main.py", paddle.device.get_device())
 
     if cfg.algorithm == 'FedAvg':
         fedavg_manager = FedAVGManager(device, cfg)

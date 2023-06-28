@@ -550,7 +550,7 @@ url_map_advprop = {
 def load_pretrained_weights(model, model_name, weights_path=None, load_fc=True, advprop=False):
     """Loads pretrained weights from weights path or download using url.
     Args:
-        model (Module): The whole model of efficientnet.
+        model (Layer): The whole model of efficientnet.
         model_name (str): Model name of efficientnet.
         weights_path (None or str):
             str: path to pretrained weights file on the local disk.

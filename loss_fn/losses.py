@@ -2,9 +2,9 @@ import math
 import logging
 import time
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import paddle
+import paddle.nn as nn
+import paddle.nn.functional as F
 import numpy as np
 
 from utils.data_utils import get_per_cls_weights
@@ -13,11 +13,11 @@ from loss_fn.ot import sinkhorn_loss_joint_IPOT
 
 def focal_loss(input_values, gamma):
     """Computes the focal loss"""
-    p = torch.exp(-input_values)
+    p = paddle.exp(-input_values)
     loss = (1 - p) ** gamma * input_values
     return loss.mean()
 
-class FocalLoss(nn.Module):
+class FocalLoss(nn.Layer):
     def __init__(self, cls_num_list=None, gamma=0., imbalance_beta=0.9999, args=None):
         super(FocalLoss, self).__init__()
         assert gamma >= 0
@@ -45,14 +45,13 @@ class FocalLoss(nn.Module):
     def forward(self, input, target):
         return focal_loss(F.cross_entropy(input, target, reduction='none', weight=self.weight), self.gamma)
 
-class LDAMLoss(nn.Module):
+class LDAMLoss(nn.Layer):
     def __init__(self, cls_num_list=None, max_m=0.5, s=30, imbalance_beta=0.9999, args=None):
         super(LDAMLoss, self).__init__()
         self.args = args
         self.imbalance_beta = imbalance_beta
         m_list = 1.0 / np.sqrt(np.sqrt(cls_num_list))
         m_list = m_list * (max_m / np.max(m_list))
-        # m_list = torch.cuda.FloatTensor(m_list)
         self.m_list = m_list
         self.max_m = max_m
         assert s > 0
@@ -78,21 +77,19 @@ class LDAMLoss(nn.Module):
         if "cls_num_list" in kwargs and kwargs["cls_num_list"] is not None:
             cls_num_list = kwargs["cls_num_list"]
             m_list = 1.0 / np.sqrt(np.sqrt(cls_num_list))
-            m_list = m_list * (self.max_m / np.max(m_list))
-            # m_list = torch.cuda.FloatTensor(m_list)
             self.m_list = m_list
         else:
             pass
 
     def forward(self, x, target):
-        index = torch.zeros_like(x, dtype=torch.uint8, device=x.device)
-        index.scatter_(1, target.data.view(-1, 1), 1)
-        index_float = index.type(torch.cuda.FloatTensor)
-        self.m_list = torch.cuda.FloatTensor(self.m_list).to(device=x.device)
-        batch_m = torch.matmul(self.m_list[None, :], index_float.transpose(0,1))
-        batch_m = batch_m.view((-1, 1))
+        index = paddle.zeros_like(x, dtype=paddle.uint8, device=x.device)
+        index.scatter_(1, target.data.reshape([-1, 1]), 1)
+        index_float = index.astype(paddle.float32)
+        self.m_list = paddle.to_tensor(self.m_list, place = x.place).astype(paddle.float32)
+        batch_m = paddle.matmul(self.m_list[None, :], index_float.transpose(0,1))
+        batch_m = batch_m.reshape([-1, 1])
         x_m = x - batch_m
-        output = torch.where(index, x_m, x)
+        output = paddle.where(index, x_m, x)
         return F.cross_entropy(self.s*output, target, weight=self.weight)
 
 
@@ -102,7 +99,7 @@ def linear_combination(x, y, epsilon):
 def reduce_loss(loss, reduction='mean'): 
     return loss.mean() if reduction=='mean' else loss.sum() if reduction=='sum' else loss 
 
-class LabelSmoothingCrossEntropy(nn.Module): 
+class LabelSmoothingCrossEntropy(nn.Layer): 
     def __init__(self, epsilon:float=0.1, reduction='mean'): 
         super().__init__() 
         self.epsilon = epsilon 
@@ -121,7 +118,7 @@ class LabelSmoothingCrossEntropy(nn.Module):
 
 
 
-class SupConLoss(nn.Module):
+class SupConLoss(nn.Layer):
     """Supervised Contrastive Learning: https://arxiv.org/pdf/2004.11362.pdf.
     It also supports the unsupervised contrastive loss in SimCLR"""
     def __init__(self, contrast_mode='all',
@@ -144,31 +141,31 @@ class SupConLoss(nn.Module):
         Returns:
             A loss scalar.
         """
-        # device = (torch.device('cuda')
+        # device = (paddle.device('cuda')
         #           if features.is_cuda
-        #           else torch.device('cpu'))
+        #           else paddle.device('cpu'))
 
         if len(features.shape) < 3:
             raise ValueError('`features` needs to be [bsz, n_views, ...],'
                              'at least 3 dimensions are required')
         if len(features.shape) > 3:
-            features = features.view(features.shape[0], features.shape[1], -1)
+            features = features.reshape([features.shape[0], features.shape[1], -1])
 
         batch_size = features.shape[0]
         if labels is not None and mask is not None:
             raise ValueError('Cannot define both `labels` and `mask`')
         elif labels is None and mask is None:
-            mask = torch.eye(batch_size, dtype=torch.float32).to(self.device)
+            mask = paddle.to_tensor(paddle.eye(batch_size, dtype=paddle.float32), place=self.device)
         elif labels is not None:
-            labels = labels.contiguous().view(-1, 1)
+            labels = labels.contiguous().reshape([-1, 1])
             if labels.shape[0] != batch_size:
                 raise ValueError('Num of labels does not match num of features')
-            mask = torch.eq(labels, labels.T).float().to(self.device)
+            mask = paddle.to_tensor(paddle.equal(labels, labels.T), place = self.device).astype(paddle.float32)
         else:
-            mask = mask.float().to(self.device)
+            mask = paddle.to_tensor(mask, place=self.device).astype(paddle.float32)
 
         contrast_count = features.shape[1]
-        contrast_feature = torch.cat(torch.unbind(features, dim=1), dim=0)
+        contrast_feature = paddle.concat(paddle.unbind(features, dim=1), dim=0)
         if self.contrast_mode == 'one':
             anchor_feature = features[:, 0]
             anchor_count = 1
@@ -179,34 +176,34 @@ class SupConLoss(nn.Module):
             raise ValueError('Unknown mode: {}'.format(self.contrast_mode))
 
         # compute logits
-        anchor_dot_contrast = torch.div(
-            torch.matmul(anchor_feature, contrast_feature.T), temperature)
+        anchor_dot_contrast = paddle.div(
+            paddle.matmul(anchor_feature, contrast_feature.T), temperature)
         # logging.info(f"In SupCon, anchor_dot_contrast.shape: {anchor_dot_contrast.shape}, anchor_dot_contrast: {anchor_dot_contrast}")
         # logging.info(f"In SupCon, anchor_dot_contrast.shape: {anchor_dot_contrast.shape}, anchor_dot_contrast: {anchor_dot_contrast.mean()}")
         # logging.info(f"In SupCon, anchor_dot_contrast.device: {anchor_dot_contrast.device}, self.device: {self.device}")
 
 
         # for numerical stability
-        logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
+        logits_max, _ = paddle.max(anchor_dot_contrast, dim=1, keepdim=True)
         logits = anchor_dot_contrast - logits_max.detach()
 
         # tile mask
         mask = mask.repeat(anchor_count, contrast_count)
         # mask-out self-contrast cases
-        logits_mask = torch.scatter(
-            torch.ones_like(mask),
+        logits_mask = paddle.scatter(
+            paddle.ones_like(mask),
             1,
-            torch.arange(batch_size * anchor_count).view(-1, 1).to(self.device),
+            paddle.to_tensor(paddle.arange(batch_size * anchor_count).reshape([-1, 1]), place=self.device),
             0
         )
         mask = mask * logits_mask
 
         # compute log_prob
-        exp_logits = torch.exp(logits) * logits_mask
+        exp_logits = paddle.exp(logits) * logits_mask
         # logging.info(f"In SupCon, exp_logits.shape: {exp_logits.shape}, exp_logits: {exp_logits.mean()}")
-        log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
-        # if torch.any(torch.isnan(log_prob)):
-        #     log_prob[torch.isnan(log_prob)] = 0.0
+        log_prob = logits - paddle.log(exp_logits.sum(1, keepdim=True))
+        # if paddle.any(paddle.isnan(log_prob)):
+        #     log_prob[paddle.isnan(log_prob)] = 0.0
         logging.info(f"In SupCon, log_prob.shape: {log_prob.shape}, log_prob: {log_prob.mean()}")
 
         mask_sum = mask.sum(1)
@@ -217,18 +214,18 @@ class SupConLoss(nn.Module):
 
         # loss
         loss = - (temperature / self.base_temperature) * mean_log_prob_pos
-        # loss[torch.isnan(loss)] = 0.0
-        if torch.any(torch.isnan(loss)):
-            # loss[torch.isnan(loss)] = 0.0
+        # loss[paddle.isnan(loss)] = 0.0
+        if paddle.any(paddle.isnan(loss)):
+            # loss[paddle.isnan(loss)] = 0.0
             logging.info(f"In SupCon, features.shape: {features.shape}, loss: {loss}")
             raise RuntimeError
-        loss = loss.view(anchor_count, batch_size).mean()
+        loss = loss.reshape([anchor_count, batch_size]).mean()
 
 
         return loss
 
 
-class proxy_align_loss(nn.Module):
+class proxy_align_loss(nn.Layer):
     def __init__(self,
             inter_domain_mapping=False,
             inter_domain_class_match=True,
@@ -269,16 +266,16 @@ class proxy_align_loss(nn.Module):
 
         # yonggang
         # if self.feat_detach:
-        #     new_features = torch.cat([real_features, noise_features.clone().detach()], dim=0)
+        #     new_features = paddle.concat([real_features, noise_features.clone().detach()], dim=0)
         # else:
         #     new_features = features
         # yonggang
         
         if self.inter_domain_mapping:
-            noise_features = torch.matmul(noise_features, self.inter_domain_mapping_matrix.to(self.device))
-            new_features = torch.cat([real_features, noise_features], dim=0)
+            noise_features = paddle.matmul(noise_features, paddle.to_tensor(self.inter_domain_mapping_matrix, place=self.device))
+            new_features = paddle.concat([real_features, noise_features], dim=0)
         elif self.noise_feat_detach:
-            new_features = torch.cat([real_features, noise_features.clone().detach()], dim=0)
+            new_features = paddle.concat([real_features, noise_features.clone().detach()], dim=0)
         else:
             new_features = features
 
@@ -287,10 +284,10 @@ class proxy_align_loss(nn.Module):
         # Here the noise_features[:real_batch_size] is designed in order to avoid overflow.
 
         if real_batch_size > noise_batch_size:
-            align_domain_loss = torch.linalg.norm(real_features[:noise_batch_size] - noise_features, ord=2, dim=1).sum() \
+            align_domain_loss = paddle.linalg.norm(real_features[:noise_batch_size] - noise_features, ord=2, dim=1).sum() \
                 / float(real_batch_size)
         else:
-            align_domain_loss = torch.linalg.norm(real_features - noise_features[:real_batch_size], ord=2, dim=1).sum() \
+            align_domain_loss = paddle.linalg.norm(real_features - noise_features[:real_batch_size], ord=2, dim=1).sum() \
                 / float(real_batch_size)
         time_table["align_domain_loss"] = time.time() - time_now
         time_now = time.time()
@@ -305,7 +302,7 @@ class proxy_align_loss(nn.Module):
         if self.inter_domain_class_match:
             real_labels = labels[:real_batch_size]
             noise_labels = labels[real_batch_size:] - self.noise_label_shift
-            align_cls_loss = self.supcon_loss(new_features, labels=torch.cat([real_labels, noise_labels], dim=0), temperature=0.07, mask=None)
+            align_cls_loss = self.supcon_loss(new_features, labels=paddle.concat([real_labels, noise_labels], dim=0), temperature=0.07, mask=None)
         else:
             align_cls_loss = self.supcon_loss(new_features, labels=labels, temperature=0.07, mask=None)
 
@@ -337,7 +334,7 @@ def cross_pair_norm(src_labels, src_features, tgt_labels, tgt_features):
         for j in range(len(tgt_labels)):
             if src_labels[i] == tgt_labels[j]:
                 count += 1
-                norm += torch.linalg.norm(src_features[i] - tgt_features[j], ord=2, dim=0).sum()
+                norm += paddle.linalg.norm(src_features[i] - tgt_features[j], ord=2, dim=0).sum()
     return norm / count
 
 
@@ -349,12 +346,12 @@ def pair_norm(labels, features):
         for j in range(i + 1, len(labels)):
             if labels[i] == labels[j]:
                 count += 1
-                norm += torch.linalg.norm(features[i] - features[j], ord=2, dim=0).sum()
+                norm += paddle.linalg.norm(features[i] - features[j], ord=2, dim=0).sum()
     return norm / count
 
 
 
-class align_feature_loss(nn.Module):
+class align_feature_loss(nn.Layer):
     def __init__(self, feature_align_means=None, fed_align_std=None, device=None):
         super(align_feature_loss, self).__init__()
         self.feature_align_means = feature_align_means
@@ -370,18 +367,18 @@ class align_feature_loss(nn.Module):
 
     def forward(self, features, labels, real_batch_size):
         repeat_times = real_batch_size // self.num_classes + 1
-        align_labels = torch.tensor(list(range(0, self.num_classes))*repeat_times).to(self.device)
-        align_features = self.feature_align_means.repeat(repeat_times, 1).to(self.device)
-        align_features = torch.normal(mean=align_features, std=self.fed_align_std)
+        align_labels = paddle.to_tensor(list(range(0, self.num_classes))*repeat_times, place = self.device)
+        align_features = paddle.to_tensor(self.feature_align_means.repeat(repeat_times, 1), place=self.device)
+        align_features = paddle.normal(mean=align_features, std=self.fed_align_std)
 
-        all_features = torch.cat([features, align_features], dim=0)
+        all_features = paddle.concat([features, align_features], dim=0)
 
         all_features = F.normalize(all_features, dim=1)
         all_features = all_features.unsqueeze(1)
 
         align_cls_loss = self.supcon_loss(
             features=all_features,
-            labels=torch.cat([labels, align_labels], dim=0),
+            labels=paddle.concat([labels, align_labels], dim=0),
             temperature=0.07, mask=None)
 
         return align_cls_loss
@@ -391,7 +388,7 @@ class align_feature_loss(nn.Module):
 
 
 
-class Distance_loss(nn.Module):
+class Distance_loss(nn.Layer):
     def __init__(self, distance, device=None):
         super(Distance_loss, self).__init__()
         self.distance = distance
@@ -435,14 +432,14 @@ class Distance_loss(nn.Module):
 
     def supcon(self, feature1, feature2, label1, label2):
 
-        all_features = torch.cat([feature1, feature2], dim=0)
+        all_features = paddle.concat([feature1, feature2], dim=0)
 
         all_features = F.normalize(all_features, dim=1)
         all_features = all_features.unsqueeze(1)
 
         align_cls_loss = self.supcon_loss(
             features=all_features,
-            labels=torch.cat([label1, label2], dim=0),
+            labels=paddle.concat([label1, label2], dim=0),
             temperature=0.07, mask=None)
         return align_cls_loss
 
@@ -456,7 +453,7 @@ class Distance_loss(nn.Module):
 
 
 
-class MMD_loss(nn.Module):
+class MMD_loss(nn.Layer):
     def __init__(self, kernel_type='rbf', kernel_mul=2.0, kernel_num=5):
         super(MMD_loss, self).__init__()
         self.kernel_num = kernel_num
@@ -465,27 +462,27 @@ class MMD_loss(nn.Module):
         self.kernel_type = kernel_type
 
     def guassian_kernel(self, source, target, kernel_mul=2.0, kernel_num=5, fix_sigma=None):
-        n_samples = int(source.size()[0]) + int(target.size()[0])
-        total = torch.cat([source, target], dim=0)
+        n_samples = int(source.shape[0]) + int(target.shape[0])
+        total = paddle.concat([source, target], dim=0)
         total0 = total.unsqueeze(0).expand(
-            int(total.size(0)), int(total.size(0)), int(total.size(1)))
+            int(total.shape[0]), int(total.shape[0]), int(total.shape[1]))
         total1 = total.unsqueeze(1).expand(
-            int(total.size(0)), int(total.size(0)), int(total.size(1)))
+            int(total.shape[0]), int(total.shape[0]), int(total.shape[1]))
         L2_distance = ((total0-total1)**2).sum(2)
         if fix_sigma:
             bandwidth = fix_sigma
         else:
-            bandwidth = torch.sum(L2_distance.data) / (n_samples**2-n_samples)
+            bandwidth = paddle.sum(L2_distance.data) / (n_samples**2-n_samples)
         bandwidth /= kernel_mul ** (kernel_num // 2)
         bandwidth_list = [bandwidth * (kernel_mul**i)
                         for i in range(kernel_num)]
-        kernel_val = [torch.exp(-L2_distance / bandwidth_temp)
+        kernel_val = [paddle.exp(-L2_distance / bandwidth_temp)
                     for bandwidth_temp in bandwidth_list]
         return sum(kernel_val)
 
     def linear_mmd2(self, f_of_X, f_of_Y):
         loss = 0.0
-        delta = f_of_X.float().mean(0) - f_of_Y.float().mean(0)
+        delta = f_of_X.astype(paddle.float32).mean(0) - f_of_Y.astype(paddle.float32).mean(0)
         loss = delta.dot(delta.T)
         return loss
 
@@ -496,11 +493,11 @@ class MMD_loss(nn.Module):
             batch_size = int(source.size()[0])
             kernels = self.guassian_kernel(
                 source, target, kernel_mul=self.kernel_mul, kernel_num=self.kernel_num, fix_sigma=self.fix_sigma)
-            XX = torch.mean(kernels[:batch_size, :batch_size])
-            YY = torch.mean(kernels[batch_size:, batch_size:])
-            XY = torch.mean(kernels[:batch_size, batch_size:])
-            YX = torch.mean(kernels[batch_size:, :batch_size])
-            loss = torch.mean(XX + YY - XY - YX)
+            XX = paddle.mean(kernels[:batch_size, :batch_size])
+            YY = paddle.mean(kernels[batch_size:, batch_size:])
+            XY = paddle.mean(kernels[:batch_size, batch_size:])
+            YX = paddle.mean(kernels[batch_size:, :batch_size])
+            loss = paddle.mean(XX + YY - XY - YX)
             return loss
 
 

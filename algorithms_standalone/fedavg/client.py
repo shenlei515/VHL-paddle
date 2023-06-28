@@ -25,7 +25,7 @@ from utils.checkpoint import save_images
 
 from model.build import create_model
 
-
+import paddle
 
 class FedAVGClient(Client):
     def __init__(self, client_index, train_data_local_dict, train_data_local_num_dict, test_data_local_dict,
@@ -74,8 +74,8 @@ class FedAVGClient(Client):
                 self.trainer.lr_schedule(round_idx)
 
     def get_max_comm_round(self):
-        # return self.args.max_comm_round + 1
-        return self.args.max_epochs // self.args.global_epochs_per_round + 1
+        return self.args.comm_round
+        # return self.args.max_epochs // self.args.global_epochs_per_round + 1
 
 
     def get_current_num_iterations(self, local_epoch=0):
@@ -123,9 +123,9 @@ class FedAVGClient(Client):
         if self.args.scaffold:
             c_model_global = global_other_params["c_model_global"]
             # for name, param in c_model_global.items():
-            #     param.data = param.data.to(self.device)
+            #     param.data = paddle.to_tensor(param.data, place=self.device)
             for name in c_model_global:
-                c_model_global[name] = c_model_global[name].to(self.device)
+                c_model_global[name] = paddle.to_tensor(c_model_global[name], place=self.device)
             self.c_model_local.to(self.device)
             c_model_local = self.c_model_local.state_dict()
 
@@ -157,6 +157,7 @@ class FedAVGClient(Client):
                         checkpoint_extra_name=f"client{self.client_index}",
                         things_to_track=things_to_track,
                         **train_epoch_kwargs)
+                    print("self.train_local", self.train_local)
                 iteration_cnt += len(self.train_local)
             else:
                 current_num_iterations = self.get_current_num_iterations(epoch)
@@ -192,8 +193,8 @@ class FedAVGClient(Client):
                 #     global_model_para[key].device : {global_model_para[key].device}, \
                 #     net_para[key].device : {net_para[key].device}")
                 c_new_para[key] = c_new_para[key] - c_model_global[key] + \
-                    (global_model_para[key].to(self.device) - net_para[key]) / (iteration_cnt * current_lr)
-                c_delta_para[key] = (c_new_para[key] - c_model_local[key]).to('cpu')
+                    (paddle.to_tensor(global_model_para[key], place=self.device) - net_para[key]) / (iteration_cnt * current_lr)
+                c_delta_para[key] = paddle.to_tensor(c_new_para[key] - c_model_local[key], place=paddle.CPUPlace())
 
             self.c_model_local.load_state_dict(c_new_para)
             self.trainer.model.to('cpu')

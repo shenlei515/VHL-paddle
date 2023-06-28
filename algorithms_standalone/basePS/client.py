@@ -3,8 +3,6 @@ import os
 import sys
 from abc import ABC, abstractmethod
 
-import torch
-
 sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../../")))
 
 from utils.perf_timer import Perf_Timer
@@ -111,8 +109,8 @@ class Client(PSTrainer):
         self.update_dataset(int(client_index),
                             self.client_timer.local_outer_epoch_idx)
 
-        if self.args.instantiate_all:
-            self.move_to_gpu(self.device)
+        # if self.args.instantiate_all:
+        #     self.move_to_gpu(self.device)
         named_params, params_indexes, local_sample_number, other_client_params, shared_params_for_simulation = \
             self.algorithm_on_train(update_state_kargs, 
                 client_index, named_params, params_type,
@@ -121,8 +119,8 @@ class Client(PSTrainer):
                 shared_params_for_simulation)
         local_train_tracker_info = self.train_tracker.encode_local_info(
             client_index, if_reset=True, metrics=self.metrics)
-        if self.args.instantiate_all:
-            self.move_to_cpu()
+        # if self.args.instantiate_all:
+        #     self.move_to_cpu()
 
         if self.args.data_save_memory_mode:
             del self.train_local_iter

@@ -117,9 +117,9 @@ class PSTrainer(object):
 
         with raise_error_without_process():
             logging.debug("type(self.train_local): {}".format(type(self.train_local)))
-            logging.debug("type(self.train_local.sampler): {}".format(type(self.train_local.sampler)))
+            # logging.debug("type(self.train_local.sampler): {}".format(type(self.train_local.sampler)))
             # This is used for distributed sampler
-            self.train_local.sampler.set_epoch(epoch)
+            # self.train_local.sampler.set_epoch(epoch)
 
         dataset_num_class = Data_Loader.num_classes_dict[self.args.dataset]
 

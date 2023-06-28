@@ -3,7 +3,6 @@ from copy import deepcopy
 from datetime import datetime
 
 import numpy as np
-import torch
 
 from .data_utils import (
     flatten,

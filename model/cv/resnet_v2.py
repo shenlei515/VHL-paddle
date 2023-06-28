@@ -9,27 +9,27 @@ Reference:
 from copy import deepcopy
 import logging
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import paddle
+import paddle.nn as nn
+import paddle.nn.functional as F
 import math
 
 
-class BasicBlock(nn.Module):
+class BasicBlock(nn.Layer):
     expansion = 1
 
     def __init__(self, in_planes, planes, stride=1):
         super(BasicBlock, self).__init__()
-        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(planes)
+        self.conv1 = nn.Conv2D(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias_attr=False)
+        self.bn1 = nn.BatchNorm2D(planes)
+        self.conv2 = nn.Conv2D(planes, planes, kernel_size=3, stride=1, padding=1, bias_attr=False)
+        self.bn2 = nn.BatchNorm2D(planes)
 
         self.shortcut = nn.Sequential()
         if stride != 1 or in_planes != self.expansion*planes:
             self.shortcut = nn.Sequential(
-                nn.Conv2d(in_planes, self.expansion*planes, kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(self.expansion*planes)
+                nn.Conv2D(in_planes, self.expansion*planes, kernel_size=1, stride=stride, bias_attr=False),
+                nn.BatchNorm2D(self.expansion*planes)
             )
 
     def forward(self, x):
@@ -40,23 +40,23 @@ class BasicBlock(nn.Module):
         return out
 
 
-class Bottleneck(nn.Module):
+class Bottleneck(nn.Layer):
     expansion = 4
 
     def __init__(self, in_planes, planes, stride=1):
         super(Bottleneck, self).__init__()
-        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.conv3 = nn.Conv2d(planes, self.expansion*planes, kernel_size=1, bias=False)
-        self.bn3 = nn.BatchNorm2d(self.expansion*planes)
+        self.conv1 = nn.Conv2D(in_planes, planes, kernel_size=1, bias_attr=False)
+        self.bn1 = nn.BatchNorm2D(planes)
+        self.conv2 = nn.Conv2D(planes, planes, kernel_size=3, stride=stride, padding=1, bias_attr=False)
+        self.bn2 = nn.BatchNorm2D(planes)
+        self.conv3 = nn.Conv2D(planes, self.expansion*planes, kernel_size=1, bias_attr=False)
+        self.bn3 = nn.BatchNorm2D(self.expansion*planes)
 
         self.shortcut = nn.Sequential()
         if stride != 1 or in_planes != self.expansion*planes:
             self.shortcut = nn.Sequential(
-                nn.Conv2d(in_planes, self.expansion*planes, kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(self.expansion*planes)
+                nn.Conv2D(in_planes, self.expansion*planes, kernel_size=1, stride=stride, bias_attr=False),
+                nn.BatchNorm2D(self.expansion*planes)
             )
 
     def forward(self, x):
@@ -68,7 +68,7 @@ class Bottleneck(nn.Module):
         return out
 
 
-class ResNet(nn.Module):
+class ResNet(nn.Layer):
     def __init__(self, block, num_blocks, num_classes=10, args=None, image_size=32, model_input_channels=3, device=None):
         super(ResNet, self).__init__()
         self.in_planes = 64
@@ -77,14 +77,15 @@ class ResNet(nn.Module):
         self.image_size = image_size
         self.device = device
 
-        self.conv1 = nn.Conv2d(model_input_channels, 64, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
+        self.conv1 = nn.Conv2D(model_input_channels, 64, kernel_size=3, stride=1, padding=1, bias_attr=False)
+        self.bn1 = nn.BatchNorm2D(64)
         self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1)
         self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
         self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
+        
+        self.avgpool = nn.AdaptiveAvgPool2D((1, 1))
         self.linear = nn.Linear(512*block.expansion, num_classes)
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
 
         self.layers_name_map = {
             "classifier": "linear"
@@ -109,27 +110,27 @@ class ResNet(nn.Module):
         out = F.relu(self.bn1(self.conv1(x)))
         out = self.layer1(out)
         if self.args.model_out_feature and self.args.model_out_feature_layer == "resnet-layer1":
-            feat = out.view(out.size(0), -1) * 1.0
+            feat = out.reshape([out.shape[0], -1]) * 1.0
             # logging.debug(f"Output feat after layer 1. feat shape: {feat.shape}, out.shape: {out.shape}")
         out = self.layer2(out)
         if self.args.model_out_feature and self.args.model_out_feature_layer == "resnet-layer2":
-            feat = out.view(out.size(0), -1) * 1.0
+            feat = out.reshape([out.shape[0], -1]) * 1.0
             # logging.debug(f"Output feat after layer 2. feat shape: {feat.shape}, out.shape: {out.shape}")
         out = self.layer3(out)
         if self.args.model_out_feature and self.args.model_out_feature_layer == "resnet-layer3":
-            feat = out.view(out.size(0), -1) * 1.0
+            feat = out.reshape([out.shape[0], -1]) * 1.0
             # logging.debug(f"Output feat after layer 3. feat shape: {feat.shape}, out.shape: {out.shape}")
         out = self.layer4(out)
         if self.args.model_out_feature and self.args.model_out_feature_layer == "resnet-layer4":
-            feat = out.view(out.size(0), -1) * 1.0
+            feat = out.reshape([out.shape[0], -1]) * 1.0
             # logging.debug(f"Output feat after layer 4. feat shape: {feat.shape}, out.shape: {out.shape}")
         # out = F.avg_pool2d(out, 4)
         out = self.avgpool(out)
         if self.args.model_out_feature and self.args.model_out_feature_layer == "last":
             # feat = out
-            feat = out.view(out.size(0), -1) * 1.0
+            feat = out.reshape([out.shape[0], -1]) * 1.0
             # logging.debug(f"Output feat before last layer. feat shape: {feat.shape}, out.shape: {out.shape}")
-        out = self.linear(out.view(out.size(0), -1))
+        out = self.linear(out.reshape([out.shape[0], -1]))
 
         if self.args.model_out_feature:
             return out, feat
@@ -158,7 +159,7 @@ def ResNet152(args, num_classes=10, **kwargs):
 
 def test():
     net = ResNet18()
-    y = net(torch.randn(1,3,32,32))
+    y = net(paddle.randn(1,3,32,32))
     print(y.size())
 
 # test()

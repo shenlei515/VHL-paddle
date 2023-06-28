@@ -2,11 +2,10 @@ import logging
 
 
 import numpy as np
-import torch.utils.data as data
+import paddle.io as data
 from PIL import Image
-from torchvision.datasets import CIFAR100
-import torch
-import torchvision.transforms as transforms
+from paddle.vision.datasets.cifar import Cifar10
+import paddle.vision.transforms as transforms
 
 from data_preprocessing.utils.utils import Cutout
 
@@ -139,7 +138,7 @@ class CIFAR100_truncated_WO_reload(data.Dataset):
 
     def __build_truncated_dataset__(self):
         # print("download = " + str(self.download))
-        # cifar_dataobj = CIFAR10(self.root, self.train, self.transform, self.target_transform, self.download)
+        # cifar_dataobj = Cifar10(self.root, self.train, self.transform, self.target_transform, self.download)
 
         if self.train:
             # print("train member of the class: {}".format(self.train))

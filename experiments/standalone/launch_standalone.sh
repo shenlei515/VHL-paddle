@@ -1,4 +1,4 @@
-#!/bin/bash
+# !/bin/bash
 
 ######################################  standalone launch shell
 cluster_name="${cluster_name:-localhost}"

@@ -1,10 +1,10 @@
-import torch
+import paddle
 import numpy as np
 
 
 def transform_list_to_tensor(model_params_list):
     for k in model_params_list.keys():
-        model_params_list[k] = torch.from_numpy(np.asarray(model_params_list[k])).float()
+        model_params_list[k] = paddle.to_tensor(np.asarray(model_params_list[k])).astype(np.float32)
     return model_params_list
 
 

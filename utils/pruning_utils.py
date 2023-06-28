@@ -3,15 +3,15 @@ Copyright (C) 2019 NVIDIA Corporation.  All rights reserved.
 Licensed under the CC BY-NC-SA 4.0 license (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode).
 """
 
-import torch
+import paddle
 
 
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
     """Saves checkpoint to disk"""
     try:
-        torch.save(state, filename)
+        paddle.save(state, filename)
         if is_best:
-            torch.save(state, filename.replace("checkpoint", "best_model"))
+            paddle.save(state, filename.replace("checkpoint", "best_model"))
     except:
         print("didn't save checkpoint file")
 
@@ -68,23 +68,23 @@ class AverageMeter(object):
 def accuracy(output, target, topk=(1,)):
     """Computes the precision@k for the specified values of k"""
     maxk = max(topk)
-    batch_size = target.size(0)
+    batch_size = target.shape[0]
 
     _, pred = output.topk(maxk, 1, True, True)
     pred = pred.t()
-    correct = pred.eq(target.view(1, -1).expand_as(pred))
+    correct = pred.equal(target.reshape([1, -1]).expand_as(pred))
 
     res = []
     for k in topk:
-        # correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
-        correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
-        res.append(correct_k.mul_(100.0 / batch_size))
+        # correct_k = correct[:k].reshape([-1]).astype(paddle.float32).sum(0, keepdim=True)
+        correct_k = correct[:k].reshape([-1]).astype(paddle.float32).sum(0, keepdim=True)
+        res.append(correct_k.matmul(paddle.to_tensor(100.0 / batch_size)))
     return res
 
 
 def load_model_pytorch(model, load_model, model_name):
     print("=> loading checkpoint '{}'".format(load_model))
-    checkpoint = torch.load(load_model)
+    checkpoint = paddle.load(load_model)
 
     if 'state_dict' in checkpoint.keys():
         load_from = checkpoint['state_dict']
@@ -173,7 +173,7 @@ def dynamic_network_change_local(model):
     for module_indx, m in enumerate(model.modules()):
         pruning_mask_indexes = None
         if not hasattr(m, "do_not_update"):
-            if isinstance(m, torch.nn.Conv2d):
+            if isinstance(m, paddle.nn.Conv2d):
                 print("interm layer", gate_track, module_indx)
                 print(m)
                 if 1:
@@ -208,7 +208,7 @@ def dynamic_network_change_local(model):
                                     m.weight.data = m.weight.data[current_skip_mask]
                                     print("weight size after skip", m.weight.data.shape)
 
-            if isinstance(m, torch.nn.BatchNorm2d):
+            if isinstance(m, paddle.nn.BatchNorm2d):
                 print("interm layer BN: ", gate_track, module_indx)
                 print(m)
                 if DO_SKIP:
@@ -239,14 +239,14 @@ def dynamic_network_change_local(model):
                     current_skip_mask_size = skip_connections[current_skip].data.shape[0]
 
                     if skip_connections[current_skip].data.shape[0] != 2048:
-                        current_skip_mask = skip_connections[current_skip].data.nonzero().view(-1)
+                        current_skip_mask = skip_connections[current_skip].data.nonzero().reshape([-1])
                     else:
-                        current_skip_mask = (skip_connections[current_skip].data + 1.0).nonzero().view(-1)
+                        current_skip_mask = (skip_connections[current_skip].data + 1.0).nonzero().reshape([-1])
                     prev_skip_mask_size = 64
                     prev_skip_mask = range(64)
                     if current_skip > 0:
                         prev_skip_mask_size = skip_connections[current_skip - 1].data.shape[0]
-                        prev_skip_mask = skip_connections[current_skip - 1].data.nonzero().view(-1)
+                        prev_skip_mask = skip_connections[current_skip - 1].data.nonzero().reshape([-1])
 
                 gate_size = m.weight.shape[0]
 
@@ -256,12 +256,12 @@ def dynamic_network_change_local(model):
                     print(pruning_mask)
 
                     if 1.0 in pruning_mask:
-                        pruning_mask_indexes = pruning_mask.nonzero().view(-1)
+                        pruning_mask_indexes = pruning_mask.nonzero().reshape([-1])
                     else:
                         pruning_mask_indexes = []
                     m.weight.data = m.weight.data[pruning_mask_indexes]
                     for prev_model in [prev_model1, prev_model2, prev_model3]:
-                        if isinstance(prev_model, torch.nn.Conv2d):
+                        if isinstance(prev_model, paddle.nn.Conv2d):
                             print("prev fixing layer", prev_model, gate_track, module_indx)
                             prev_model.weight.data = prev_model.weight.data[pruning_mask_indexes]
                             print("weight size", prev_model.weight.data.shape)
@@ -280,7 +280,7 @@ def dynamic_network_change_local(model):
                                         prev_model.weight.data = prev_model.weight.data[:, prev_skip_mask]
                                         print("weight size", prev_model.weight.data.shape)
 
-                        if isinstance(prev_model, torch.nn.BatchNorm2d):
+                        if isinstance(prev_model, paddle.nn.BatchNorm2d):
                             print("prev fixing layer", prev_model, gate_track, module_indx)
                             prev_model.weight.data = prev_model.weight.data[pruning_mask_indexes]
                             prev_model.bias.data = prev_model.bias.data[pruning_mask_indexes]
@@ -302,16 +302,16 @@ def dynamic_network_change_local(model):
                 gate_track += 1
                 if gate_track < 4:
                     if m.weight.shape[0] < 2048:
-                        m.weight.data = m.weight.data[m.weight.nonzero().view(-1)]
+                        m.weight.data = m.weight.data[m.weight.nonzero().reshape([-1])]
 
     print("printing conv layers")
     for module_indx, m in enumerate(model.modules()):
-        if isinstance(m, torch.nn.Conv2d):
+        if isinstance(m, paddle.nn.Conv2d):
             print(module_indx, "->", m.weight.data.shape)
 
     print("printing bn layers")
     for module_indx, m in enumerate(model.modules()):
-        if isinstance(m, torch.nn.BatchNorm2d):
+        if isinstance(m, paddle.nn.BatchNorm2d):
             print(module_indx, "->", m.weight.data.shape)
 
     print("printing gate layers")
@@ -324,7 +324,7 @@ def add_hook_for_flops(args, model):
     # add output dims for FLOPs computation
     if 1:
         for module_indx, m in enumerate(model.modules()):
-            if isinstance(m, torch.nn.Conv2d):
+            if isinstance(m, paddle.nn.Conv2d):
                 def forward_hook(self, input, output):
                     self.weight.output_dims = output.shape
 
@@ -338,11 +338,11 @@ def get_conv_sizes(args, model):
         add_hook_for_flops(args, model)
         if 1:
             if args.dataset=="CIFAR10":
-                dummy_input = torch.rand(1, 3, 32, 32)
+                dummy_input = paddle.rand(1, 3, 32, 32)
             elif args.dataset=="Imagenet":
-                dummy_input = torch.rand(1, 3, 224, 224)
+                dummy_input = paddle.rand(1, 3, 224, 224)
             # run inference
-            with torch.no_grad():
+            with paddle.no_grad():
                 model(dummy_input)
             # store flops
             output_sizes = list()

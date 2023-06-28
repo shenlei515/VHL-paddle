@@ -4,7 +4,6 @@ import random
 from re import M
 
 import numpy as np
-import torch
 import wandb
 
 from .client import FedAVGClient
@@ -23,6 +22,7 @@ from model.build import create_model
 from trainers.build import create_trainer
 
 from algorithms.fedavg.fedavg_server_timer import FedAVGServerTimer
+import paddle
 
 class FedAVGManager(BasePSManager):
     def __init__(self, device, args):
@@ -118,10 +118,10 @@ class FedAVGManager(BasePSManager):
                         update_state_kargs, global_time_info,
                         shared_params_for_simulation):
         for i, client_index in enumerate(client_indexes):
-
-            copy_global_other_params = copy.deepcopy(global_other_params)
+            # print("global_other_params", global_other_params)
+            copy_global_other_params = global_other_params
             if self.args.exchange_model == True:
-                copy_named_model_params = copy.deepcopy(named_params)
+                copy_named_model_params = named_params
 
             if self.args.instantiate_all:
                 client = self.client_list[client_index]
@@ -138,7 +138,7 @@ class FedAVGManager(BasePSManager):
             # client training.............
             model_params, model_indexes, local_sample_number, client_other_params, \
             local_train_tracker_info, local_time_info, shared_params_for_simulation = \
-                    client.train(update_state_kargs, global_time_info, 
+                    client.train(update_state_kargs, global_time_info,
                     client_index, copy_named_model_params, params_type,
                     copy_global_other_params,
                     traininig_start=traininig_start,

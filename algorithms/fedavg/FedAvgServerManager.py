@@ -41,8 +41,8 @@ class FedAVGServerManager(PSServerManager):
         super().run()
 
     def get_max_comm_round(self):
-        # return self.args.max_comm_round + 1
-        return self.args.max_epochs // self.args.global_epochs_per_round + 1
+        return self.args.comm_round
+        # return self.args.max_epochs // self.args.global_epochs_per_round + 1
 
     # @overrid
     def send_init_msg(self):

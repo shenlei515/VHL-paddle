@@ -3,18 +3,14 @@ import logging
 import time
 
 import torch
-import wandb
-from torch import nn
-import torch.optim as optim
-import torch.nn.functional as F
+import paddle
+from paddle import nn
+import paddle.optimizer as optim
+import paddle.nn.functional as F
 
 import numpy as np
 
-from torch.distributions import Categorical
-
-from torchvision import transforms
 import matplotlib.pyplot as plt
-from torchvision.utils import save_image
 
 from fedml_core.trainer.model_trainer import ModelTrainer
 
@@ -104,23 +100,23 @@ class NormalTrainer(ModelTrainer):
 
         self.save_checkpoints_config = setup_checkpoint_config(self.args)
 
-        # For future use
-        self.param_groups = self.optimizer.param_groups
-        with raise_error_without_process():
-            self.param_names = list(
-                enumerate([group["name"] for group in self.param_groups])
-            )
+        # # For future use
+        # self.param_groups = self.optimizer.param_groups
+        # with raise_error_without_process():
+        #     self.param_names = list(
+        #         enumerate([group["name"] for group in self.param_groups])
+        #     )
 
-        self.named_parameters = list(self.model.named_parameters())
+        # self.named_parameters = list(self.model.named_parameters())
 
-        if len(self.named_parameters) > 0:
-            self._parameter_names = {v: k for k, v
-                                    in sorted(self.named_parameters)}
-            #print('Sorted named_parameters')
-        else:
-            self._parameter_names = {v: 'noname.%s' % i
-                                    for param_group in self.param_groups
-                                    for i, v in enumerate(param_group['params'])}
+        # if len(self.named_parameters) > 0:
+        #     self._parameter_names = {v: k for k, v
+        #                             in sorted(self.named_parameters)}
+        #     #print('Sorted named_parameters')
+        # else:
+        #     self._parameter_names = {v: 'noname.%s' % i
+        #                             for param_group in self.param_groups
+        #                             for i, v in enumerate(param_group['params'])}
 
         self.averager = Averager(self.args, self.model)
 
@@ -132,7 +128,7 @@ class NormalTrainer(ModelTrainer):
                 if self.args.VHL_inter_domain_ortho_mapping:
                     self.VHL_mapping_matrix = None
                 else:
-                    self.VHL_mapping_matrix = torch.rand(
+                    self.VHL_mapping_matrix = paddle.rand(
                         self.args.model_feature_dim, self.args.model_feature_dim)
                 self.proxy_align_loss = proxy_align_loss(
                     inter_domain_mapping=self.args.VHL_inter_domain_mapping,
@@ -162,7 +158,7 @@ class NormalTrainer(ModelTrainer):
                 raise NotImplementedError
 
         if self.args.fed_align:
-            self.feature_align_means = torch.rand(
+            self.feature_align_means = paddle.rand(
                 self.args.num_classes, self.args.model_feature_dim
             )
             self.align_feature_loss = align_feature_loss(
@@ -197,22 +193,22 @@ class NormalTrainer(ModelTrainer):
 
 
     def generate_fake_data(self, num_of_samples=64):
-        input = torch.randn(num_of_samples, self.args.model_input_channels,
+        input = paddle.randn(num_of_samples, self.args.model_input_channels,
                     self.args.dataset_load_image_size, self.args.dataset_load_image_size)
         return input
 
 
     def get_model_named_modules(self):
-        return dict(self.model.cpu().named_modules())
+        return dict(self.model.named_modules())
 
 
     def get_model_params(self):
-        return self.model.cpu().state_dict()
+        return self.model.to_static_state_dict()
 
     def set_model_params(self, model_parameters):
         # for name, param in model_parameters.items():
         #     logging.info(f"Getting params as model_parameters: name:{name}, shape: {param.shape}")
-        self.model.load_state_dict(model_parameters)
+        self.model.set_state_dict(model_parameters)
 
 
     def set_VHL_mapping_matrix(self, VHL_mapping_matrix):
@@ -251,7 +247,7 @@ class NormalTrainer(ModelTrainer):
             raw_dim=self.args.model_feature_dim,
             column_dim=self.args.model_feature_dim)
         logging.info(f"Generating orthogonal_random_matrix, validating: det of matrix: "+
-                    f"{torch.det(self.VHL_mapping_matrix)}")
+                    f"{paddle.linalg.det(self.VHL_mapping_matrix)}")
 
     def get_model_bn(self):
         all_bn_params = get_all_bn_params(self.model)
@@ -264,8 +260,8 @@ class NormalTrainer(ModelTrainer):
         for module_name, module in self.model.named_modules():
             if type(module) is nn.BatchNorm2d:
                 # logging.info(f"module_name:{module_name}, params.norm: {module.weight.data.norm()}")
-                module.weight.data = all_bn_params[module_name+".weight"] 
-                module.bias.data = all_bn_params[module_name+".bias"] 
+                module.weight.set_value(all_bn_params[module_name+".weight"])
+                module.bias.set_value(all_bn_params[module_name+".bias"])
                 module.running_mean = all_bn_params[module_name+".running_mean"] 
                 module.running_var = all_bn_params[module_name+".running_var"] 
                 module.num_batches_tracked = all_bn_params[module_name+".num_batches_tracked"] 
@@ -279,13 +275,13 @@ class NormalTrainer(ModelTrainer):
     def set_grad_params(self, named_grads):
         # pass
         self.model.train()
-        self.optimizer.zero_grad()
+        self.optimizer.clear_grad()
         for name, parameter in self.model.named_parameters():
-            parameter.grad.copy_(named_grads[name].data.to(self.device))
+            parameter.grad.set_value(paddle.to_tensor(named_grads[name], place=self.device))
 
 
     def clear_grad_params(self):
-        self.optimizer.zero_grad()
+        self.optimizer.clear_grad()
 
     def update_model_with_grad(self):
         self.model.to(self.device)
@@ -327,8 +323,8 @@ class NormalTrainer(ModelTrainer):
             batch_loss = []
             for batch_idx, (x, labels) in enumerate(train_data):
                 # logging.info(images.shape)
-                x, labels = x.to(device), labels.to(device)
-                self.optimizer.zero_grad()
+                x, labels = paddle.to_tensor(x, place=device), paddle.to_tensor(labels, place=device)
+                self.optimizer.clear_grad()
 
                 if self.args.model_out_feature:
                     output, feat = model(x)
@@ -348,6 +344,8 @@ class NormalTrainer(ModelTrainer):
 
 
     def get_train_batch_data(self, train_local):
+        print("device in normal_trainer", paddle.device.get_device())
+        print("train_local", train_local)
         try:
             train_batch_data = self.train_local_iter.next()
             # logging.debug("len(train_batch_data[0]): {}".format(len(train_batch_data[0])))
@@ -384,7 +382,7 @@ class NormalTrainer(ModelTrainer):
         metric_stat = metrics.evaluate(loss, output, labels)
         tracker.update_metrics(
             metric_stat, 
-            metrics_n_samples=labels.size(0)
+            metrics_n_samples=labels.shape[0]
         )
 
         if len(things_to_track) > 0:
@@ -453,11 +451,11 @@ class NormalTrainer(ModelTrainer):
 
             real_batch_size = labels.shape[0]
             if self.args.TwoCropTransform:
-                x = torch.cat([x[0], x[1]], dim=0)
-                labels = torch.cat([labels, labels], dim=0)
-            x, labels = x.to(device), labels.to(device)
+                x = paddle.concat([x[0], x[1]], axis=0)
+                labels = paddle.concat([labels, labels], axis=0)
+            x, labels = paddle.to_tensor(x, place=device), paddle.to_tensor(labels, place=device, dtype=paddle.int64)
             if clear_grad_bef_opt:
-                self.optimizer.zero_grad()
+                self.optimizer.clear_grad()
 
             if self.args.model_out_feature:
                 output, feat = model(x)
@@ -482,7 +480,7 @@ class NormalTrainer(ModelTrainer):
                 previous_model = kwargs["previous_model"]
                 for name, param in model.named_parameters():
                     fed_prox_reg += ((self.args.fedprox_mu / 2) * \
-                        torch.norm((param - previous_model[name].data.to(device)))**2)
+                        paddle.norm(param - paddle.to_tensor(previous_model[name], place = x.place))**2)
                 loss += fed_prox_reg
 
             loss.backward()
@@ -499,8 +497,8 @@ class NormalTrainer(ModelTrainer):
                 for name, param in model.named_parameters():
                     # logging.debug(f"c_model_global[name].device : {c_model_global[name].device}, \
                     #     c_model_local[name].device : {c_model_local[name].device}")
-                    param.data = param.data - current_lr * \
-                        check_device((c_model_global[name] - c_model_local[name]), param.data.device)
+                    param = paddle.to_tensor(paddle.to_tensor(param, place=param.place) - current_lr * \
+                        check_device((c_model_global[name] - c_model_local[name]), param.place), place=param.place)
 
             logging.debug(f"epoch: {epoch}, Loss is {loss_value}")
 
@@ -520,8 +518,8 @@ class NormalTrainer(ModelTrainer):
 
 
     def generate_noise_data(self, noise_label_style="extra", y_train=None):
-        # means = torch.zeros((self.args.batch_size, self.args.fedaux_noise_size))
-        # noise = torch.normal(mean=means, std=1.0)
+        # means = paddle.zeros((self.args.batch_size, self.args.fedaux_noise_size))
+        # noise = paddle.normal(mean=means, std=1.0)
 
         noise_label_shift = 0
 
@@ -566,8 +564,8 @@ class NormalTrainer(ModelTrainer):
                 noise_data_list.append(data)
                 label_shift = self.noise_dataset_label_shift[dataset_name] + noise_label_shift
                 noise_data_labels.append(label + label_shift)
-            noise_data = torch.cat(noise_data_list).to(self.device)
-            labels = torch.cat(noise_data_labels).to(self.device)
+            noise_data = paddle.to_tensor(paddle.concat(noise_data_list), place=self.device)
+            labels = paddle.to_tensor(paddle.concat(noise_data_labels), place=self.device)
         else:
             raise NotImplementedError
 
@@ -588,20 +586,19 @@ class NormalTrainer(ModelTrainer):
         generator.train()
         generator.to(self.device)
         for i in range(max_iters):
-            generator_optimizer = torch.optim.SGD(generator.parameters(),
+            generator_optimizer = paddle.optimizer.SGD(generator.parameters(),
                 lr=0.01, weight_decay=0.0001, momentum=0.9)
-            means = torch.zeros((64, self.args.fedaux_noise_size))
-            z = torch.normal(mean=means, std=1.0).to(self.device)
+            means = paddle.zeros((64, self.args.fedaux_noise_size))
+            z = paddle.to_tensor(paddle.normal(mean=means, std=1.0), place=self.device)
             data = generator(z)
             loss_diverse = cov_non_diag_norm(data)
-            generator_optimizer.zero_grad()
+            generator_optimizer.clear_grad()
             loss_diverse.backward()
             generator_optimizer.step()
             logging.info(f"Iteration: {i}, loss_diverse: {loss_diverse.item()}")
             if loss_diverse.item() < min_loss:
                 logging.info(f"Iteration: {i}, loss_diverse: {loss_diverse.item()} smaller than min_loss: {min_loss}, break")
                 break
-        generator.cpu()
 
 
     def VHL_get_diverse_distribution(self):
@@ -611,8 +608,8 @@ class NormalTrainer(ModelTrainer):
         self.style_GAN_latent_noise_mean = normed_n_mean.detach()
         self.style_GAN_latent_noise_std = [0.1 / n_dim]*n_dim
 
-        global_zeros = torch.ones((self.args.VHL_num, self.args.style_gan_style_dim)) * 0.0
-        global_mean_vector = torch.normal(mean=global_zeros, std=self.args.style_gan_sample_z_mean)
+        global_zeros = paddle.ones((self.args.VHL_num, self.args.style_gan_style_dim)) * 0.0
+        global_mean_vector = paddle.normal(mean=global_zeros, std=self.args.style_gan_sample_z_mean)
         self.style_GAN_sample_z_mean = global_mean_vector
         self.style_GAN_sample_z_std = self.args.style_gan_sample_z_std
 
@@ -657,30 +654,29 @@ class NormalTrainer(ModelTrainer):
             x, labels = train_batch_data
             # if batch_idx > 5:
             #     break
-            x, labels = x.to(device), labels.to(device)
+            x, labels = paddle.to_tensor(x, place=device), paddle.to_tensor(labels, place=device, dtype=paddle.int64)
             if clear_grad_bef_opt:
-                self.optimizer.zero_grad()
+                self.optimizer.clear_grad()
 
             time_now = time.time()
             real_batch_size = labels.shape[0]
 
             aux_data, sampled_label = self.generate_noise_data(
                 noise_label_style=self.args.VHL_label_style, y_train=labels)
-            sampled_label = sampled_label.to(device)
+            sampled_label = paddle.to_tensor(sampled_label, place=device)
             if x.shape[1] == 1:
                 assert self.args.dataset in ["mnist", "femnist", "fmnist", "femnist-digit"]
                 x = x.repeat(1, 3, 1, 1)
             # logging.info(f"x.shape: {x.shape}, aux_data.shape: {aux_data.shape} " )
-            x_cat = torch.cat((x, aux_data), dim=0)
+            x_cat = paddle.concat((x, aux_data), axis=0)
 
-            # y_cat = torch.cat((labels, labels), dim=0)
             if self.args.model_out_feature:
                 output, feat = model(x_cat)
             else:
                 output = model(x_cat)
 
             loss_origin = F.cross_entropy(output[0:real_batch_size], labels)
-            loss_aux = F.cross_entropy(output[real_batch_size:], sampled_label)
+            loss_aux = F.cross_entropy(output[real_batch_size:], sampled_label-10)
             # loss = (1 - alpha) * loss_origin + alpha * loss_aux
             loss = loss_origin + self.args.VHL_alpha * loss_aux
             loss_origin_value = loss_origin.item()
@@ -690,7 +686,7 @@ class NormalTrainer(ModelTrainer):
             noise_cls_loss_value = 0.0
             if self.args.VHL_feat_align and epoch < self.args.VHL_align_local_epoch:
                 loss_feat_align, align_domain_loss_value, align_cls_loss_value, noise_cls_loss_value = self.proxy_align_loss(
-                    feat, torch.cat([labels, sampled_label], dim=0), real_batch_size)
+                    feat, paddle.concat([labels, sampled_label], axis=0), real_batch_size)
                 loss += loss_feat_align
 
             if self.args.fedprox:
@@ -698,11 +694,11 @@ class NormalTrainer(ModelTrainer):
                 previous_model = kwargs["previous_model"]
                 for name, param in model.named_parameters():
                     fed_prox_reg += ((self.args.fedprox_mu / 2) * \
-                        torch.norm((param - previous_model[name].data.to(device)))**2)
+                        paddle.norm((param - paddle.to_tensor(previous_model[name], place=device)))**2)
                 loss += fed_prox_reg
 
             # loss = F.cross_entropy(output, y_cat)
-            self.optimizer.zero_grad()
+            self.optimizer.clear_grad()
             loss.backward()
             self.optimizer.step()
 
@@ -716,8 +712,8 @@ class NormalTrainer(ModelTrainer):
                 for name, param in model.named_parameters():
                     # logging.debug(f"c_model_global[name].device : {c_model_global[name].device}, \
                     #     c_model_local[name].device : {c_model_local[name].device}")
-                    param.data = param.data - current_lr * \
-                        check_device((c_model_global[name] - c_model_local[name]), param.data.device)
+                    param = paddle.to_tensor(paddle.to_tensor(param, place=param.place) - current_lr * \
+                        check_device((c_model_global[name] - c_model_local[name]), param.place), place=param.place)
 
             logging.debug(f"epoch: {epoch}, Loss is {loss.item()}")
 
@@ -778,14 +774,14 @@ class NormalTrainer(ModelTrainer):
         x, labels = train_batch_data
 
         if self.args.TwoCropTransform:
-            x = torch.cat([x[0], x[1]], dim=0)
-            labels = torch.cat([labels, labels], dim=0)
+            x = paddle.concat([x[0], x[1]], axis=0)
+            labels = paddle.concat([labels, labels], axis=0)
 
-        x, labels = x.to(device), labels.to(device)
+        x, labels = paddle.to_tensor(x, place=device), paddle.to_tensor(labels, place=device)
         real_batch_size = labels.shape[0]
 
         if clear_grad_bef_opt:
-            self.optimizer.zero_grad()
+            self.optimizer.clear_grad()
 
         if self.args.fedprox:
             # previous_model = copy.deepcopy(self.trainer.get_model_params())
@@ -796,16 +792,15 @@ class NormalTrainer(ModelTrainer):
         if self.args.VHL:
             aux_data, sampled_label = self.generate_noise_data(
                 noise_label_style=self.args.VHL_label_style, y_train=labels)
-            # sampled_label = torch.full((self.args.batch_size), self.args.num_classes).long()
-            # sampled_label = (torch.ones(self.args.batch_size)*self.args.num_classes).long().to(device)
-            sampled_label = sampled_label.to(device)
+            # sampled_label = paddle.full((self.args.batch_size), self.args.num_classes).long()
+            sampled_label = paddle.to_tensor(sampled_label, place=device)
             # self.generator.eval()
 
             if x.shape[1] == 1:
                 assert self.args.dataset in ["mnist", "femnist", "fmnist", "femnist-digit"]
                 x = x.repeat(1, 3, 1, 1)
 
-            x_cat = torch.cat((x, aux_data), dim=0)
+            x_cat = paddle.concat((x, aux_data), axis=0)
 
             if self.args.model_out_feature:
                 output, feat = model(x_cat)
@@ -822,7 +817,7 @@ class NormalTrainer(ModelTrainer):
             noise_cls_loss_value = 0.0
             if self.args.VHL_feat_align and epoch < self.args.VHL_align_local_epoch:
                 loss_feat_align, align_domain_loss_value, align_cls_loss_value, noise_cls_loss_value = self.proxy_align_loss(
-                    feat, torch.cat([labels, sampled_label], dim=0), real_batch_size)
+                    feat, paddle.concat([labels, sampled_label], axis=0), real_batch_size)
                 loss += loss_feat_align
         else:
             output = model(x)
@@ -891,10 +886,10 @@ class NormalTrainer(ModelTrainer):
         time_table = {}
         time_now = time.time()
         x, labels = train_batch_data
-        x, labels = x.to(device), labels.to(device)
+        x, labels = paddle.to_tensor(x, place=device), paddle.to_tensor(labels, place=device)
 
         if clear_grad_bef_opt:
-            self.optimizer.zero_grad()
+            self.optimizer.clear_grad()
 
         if self.args.model_out_feature:
             output, feat = model(x)
@@ -939,10 +934,10 @@ class NormalTrainer(ModelTrainer):
         model.eval()
         if move_to_gpu:
             model.to(device)
-        with torch.no_grad():
+        with paddle.no_grad():
             for batch_idx, (x, labels) in enumerate(test_data):
-                x = x.to(device)
-                labels = labels.to(device)
+                x = paddle.to_tensor(x, place=device)
+                labels = paddle.to_tensor(labels, place=device)
                 real_batch_size = labels.shape[0]
                 if self.args.model_input_channels == 3 and x.shape[1] == 1:
                     x = x.repeat(1, 3, 1, 1)

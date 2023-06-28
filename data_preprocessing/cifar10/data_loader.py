@@ -2,10 +2,9 @@ import logging
 import random
 
 import numpy as np
-import torch
-import torch.utils.data as data
+import paddle.io as data
 import torchvision.transforms as transforms
-from torchvision.datasets import CIFAR10
+from paddle.vision.datasets.cifar import Cifar10
 
 from .datasets import CIFAR10_truncated, CIFAR10_truncated_WO_reload
 from .transform import data_transforms_cifar10
@@ -14,7 +13,7 @@ from data_preprocessing.utils.imbalance_data import ImbalancedDatasetSampler
 
 
 # generate the non-IID distribution for all methods
-def read_data_distribution(filename='./data_preprocessing/non-iid-distribution/CIFAR10/distribution.txt'):
+def read_data_distribution(filename='./data_preprocessing/non-iid-distribution/Cifar10/distribution.txt'):
     distribution = {}
     with open(filename, 'r') as data:
         for x in data.readlines():
@@ -29,7 +28,7 @@ def read_data_distribution(filename='./data_preprocessing/non-iid-distribution/C
     return distribution
 
 
-def read_net_dataidx_map(filename='./data_preprocessing/non-iid-distribution/CIFAR10/net_dataidx_map.txt'):
+def read_net_dataidx_map(filename='./data_preprocessing/non-iid-distribution/Cifar10/net_dataidx_map.txt'):
     net_dataidx_map = {}
     with open(filename, 'r') as data:
         for x in data.readlines():
@@ -63,8 +62,8 @@ def load_cifar10_data(datadir, resize=32, augmentation=True, args=None):
     train_transform, test_transform = data_transforms_cifar10(resize=resize, augmentation=augmentation)
 
     if args.data_efficient_load:
-        cifar10_train_ds = CIFAR10(datadir,  train=True, download=True, transform=train_transform)
-        cifar10_test_ds = CIFAR10(datadir,  train=False, download=True, transform=test_transform)
+        cifar10_train_ds = Cifar10(datadir,  train=True, download=True, transform=train_transform)
+        cifar10_test_ds = Cifar10(datadir,  train=False, download=True, transform=test_transform)
     else:
         cifar10_train_ds = CIFAR10_truncated(datadir, train=True, download=True, transform=train_transform)
         cifar10_test_ds = CIFAR10_truncated(datadir, train=False, download=True, transform=test_transform)
@@ -215,11 +214,11 @@ def partition_data(dataset, datadir, partition, n_nets, alpha, resize=32, augmen
 
 
     elif partition == "hetero-fix":
-        dataidx_map_file_path = './data_preprocessing/non-iid-distribution/CIFAR10/net_dataidx_map.txt'
+        dataidx_map_file_path = './data_preprocessing/non-iid-distribution/Cifar10/net_dataidx_map.txt'
         net_dataidx_map = read_net_dataidx_map(dataidx_map_file_path)
 
     if partition == "hetero-fix":
-        distribution_file_path = './data_preprocessing/non-iid-distribution/CIFAR10/distribution.txt'
+        distribution_file_path = './data_preprocessing/non-iid-distribution/Cifar10/distribution.txt'
         traindata_cls_counts = read_data_distribution(distribution_file_path)
     else:
         traindata_cls_counts = record_net_data_stats(y_train_np, net_dataidx_map)

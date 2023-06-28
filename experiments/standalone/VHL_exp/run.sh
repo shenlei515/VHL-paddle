@@ -19,8 +19,8 @@ export cluster_name=${cluster_name:-localhost}
 
 # export WANDB_MODE=offline
 
-export entity="coolzhtang"
-export project="VHL"
+# export entity="coolzhtang"
+export project="VHL-pad"
 export level=${level:-INFO}
 export exp_mode=${exp_mode:-"ready"}
 
@@ -37,7 +37,7 @@ export sched=${sched:-StepLR}
 export lr_decay_rate=${lr_decay_rate:-0.992}
 export momentum=${momentum:-0.9}
 export global_epochs_per_round=${global_epochs_per_round:-1}
-export max_epochs=${max_epochs:-1000}
+export max_epochs=${max_epochs:-1}
 
 export batch_size=${batch_size:-128}
 export wd=${wd:-0.0001}

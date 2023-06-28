@@ -1,4 +1,4 @@
-import torch.nn as nn
+import paddle.nn as nn
 
 """
     args.loss_fn in 

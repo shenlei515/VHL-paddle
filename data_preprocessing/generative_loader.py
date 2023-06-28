@@ -2,9 +2,8 @@ import logging
 import random
 
 import numpy as np
-import torch
-import torch.utils.data as data
-import torchvision.transforms as transforms
+import paddle.io as data
+import paddle.vision.transforms as transforms
 
 from data_preprocessing.utils.imbalance_data import ImbalancedDatasetSampler
 

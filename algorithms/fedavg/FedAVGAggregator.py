@@ -4,7 +4,6 @@ import random
 import time
 
 import numpy as np
-import torch
 import wandb
 
 from algorithms.basePS.ps_aggregator import PSAggregator

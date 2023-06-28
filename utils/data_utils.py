@@ -3,9 +3,9 @@ from copy import deepcopy
 from datetime import datetime
 
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import paddle
+import paddle.nn as nn
+import paddle.nn.functional as F
 
 def get_n_bits(tensor):
     return 8 * tensor.nelement() * tensor.element_size()
@@ -258,17 +258,17 @@ def idv_average_named_params(named_params_list, average_weights_dict_list, homo_
             else:
                 w = average_weights_dict_list[i][name]
                 logging.debug(f"average_weights_dict_list[{i}][{name}]: {average_weights_dict_list[i][name]}")
-                # w = torch.full_like(average_weights_dict_list[i][name], homo_weights_list[i]).detach()
+                # w = paddle.full_like(average_weights_dict_list[i][name], homo_weights_list[i]).detach()
                 # logging.debug(f"homo_weights_list[i]: {homo_weights_list[i]}")
             if not isinstance(w, float):
-                local_named_params[name] = check_device(local_named_params[name], w.device)
+                local_named_params[name] = check_device(local_named_params[name], w.place)
             if i == 0:
                 averaged_params[name] = (local_named_params[name].data * w \
-                    ).type(averaged_params[name].dtype)
+                    ).astype(averaged_params[name].dtype)
             else:
-                averaged_params[name] = check_device(averaged_params[name], local_named_params[name].data.device)
+                averaged_params[name] = check_device(averaged_params[name], local_named_params[name].data.place)
                 averaged_params[name] += (local_named_params[name].data * w \
-                    ).type(averaged_params[name].dtype)
+                    ).astype(averaged_params[name].dtype)
     return averaged_params
 
 
@@ -300,11 +300,11 @@ def average_named_params(named_params_list, average_weights_dict_list, inplace=T
             # logging.debug("aggregating ---- local_sample_number/sum: {}/{}, ".format(
             #     local_sample_number, sum))
             w = average_weights_dict_list[i]
-            # w = torch.full_like(local_named_params[k], w).detach()
+            # w = paddle.full_like(local_named_params[k], w).detach()
             if i == 0:
-                averaged_params[k] = (local_named_params[k] * w).type(averaged_params[k].dtype)
+                averaged_params[k] = (local_named_params[k] * w).astype(averaged_params[k].dtype)
             else:
-                averaged_params[k] += (local_named_params[k].to(averaged_params[k].device) * w).type(
+                averaged_params[k] += (local_named_params[k] * w).astype(
                     averaged_params[k].dtype)
     return averaged_params
 
@@ -319,9 +319,9 @@ def average_tensors(tensors, weights, inplace=False):
         for i, tensor in enumerate(tensors):
             w = weights[i] / sum
             if i == 0:
-                averaged_tensor = tensor.to(averaged_tensor.device) * w
+                averaged_tensor = tensor * w
             else:
-                averaged_tensor += tensor.to(averaged_tensor.device) * w
+                averaged_tensor += tensor * w
     elif isinstance(tensors, dict):
         # logging.info(f"type(weights): {type(weights)}")
         sum = np.sum(list(weights.values()))
@@ -329,9 +329,9 @@ def average_tensors(tensors, weights, inplace=False):
         for i, key in enumerate(tensors.keys()):
             w = weights[key] / sum
             if i == 0:
-                averaged_tensor = tensors[key].to(averaged_tensor.device) * w
+                averaged_tensor = tensors[key] * w
             else:
-                averaged_tensor += tensors[key].to(averaged_tensor.device) * w
+                averaged_tensor += tensors[key] * w
     else:
         raise NotImplementedError()
     return averaged_tensor
@@ -350,13 +350,13 @@ def flatten(tensors, shapes=None, use_cuda=True):
             pointers.append(pointers[-1] + tensor.nelement())
 
     # flattening.
-    vec = torch.empty(
+    vec = paddle.empty(
         pointers[-1], dtype=tensors[0].dtype,
         device=tensors[0].device if tensors[0].is_cuda and use_cuda else "cpu",
     )
 
     for tensor, start_idx, end_idx in zip(tensors, pointers[:-1], pointers[1:]):
-        vec[start_idx:end_idx] = tensor.data.view(-1)
+        vec[start_idx:end_idx] = tensor.data.reshape(-1)
     return vec
 
 
@@ -365,7 +365,7 @@ def unflatten(tensors, synced_tensors, shapes):
 
     for tensor, shape in zip(tensors, shapes):
         param_size, nelement = shape
-        tensor.data[:] = synced_tensors[pointer : pointer + nelement].view(param_size)
+        tensor.data[:] = synced_tensors[pointer : pointer + nelement].reshape(param_size)
         pointer += nelement
 
 
@@ -379,13 +379,13 @@ def flatten_model(named_parameters=None, flatten_grad=False, param_list=None):
     for name, param in named_parameters.items():
         # TODO maybe custom the layers that need to be pruned.
         if param.dim() in [2, 4]:
-            to_concat_w.append(param.data.view(-1))
+            to_concat_w.append(param.data.reshape(-1))
             if flatten_grad:
-                to_concat_g.append(param.grad.data.view(-1))
+                to_concat_g.append(param.grad.data.reshape(-1))
 
-    all_w = torch.cat(to_concat_w)
+    all_w = paddle.concat(to_concat_w)
     if flatten_grad:
-        all_g = torch.cat(to_concat_g)
+        all_g = paddle.concat(to_concat_g)
     else:
         all_g = None
     return all_w, all_g 
@@ -400,7 +400,7 @@ def flatten_model(named_parameters=None, flatten_grad=False, param_list=None):
 
 def recover_device(data, device=None):
     if device is not None:
-        return data.to(device)
+        return paddle.to_tensor(data, place=device)
     else:
         return data
 
@@ -408,7 +408,7 @@ def recover_device(data, device=None):
 def check_device(data_src, device=None):
     if device is not None:
         if data_src.device is not device:
-            return data_src.to(device)
+            return paddle.to_tensor(data_src, place=device)
         else:
             return data_src
     else:
@@ -420,7 +420,7 @@ def check_type(data_src, type=None):
         if data_src.type() == type:
             return data_src
         else:
-            return data_src.type(type)
+            return data_src.astype(type)
     else:
         return data_src
 
@@ -537,15 +537,15 @@ def get_div_weights(weights1, weights2=None, scalar=1.0):
     """ Produce a direction from 'weights1' to 'weights2'."""
     if weights2 is not None:
         if isinstance(weights1, list) and isinstance(weights2, list):
-            return [torch.div(w1, w2) for (w1, w2) in zip(weights1, weights2)]
-        elif isinstance(weights1, torch.Tensor) and isinstance(weights2, torch.Tensor):
-            return torch.div(weights1, weights2)
+            return [paddle.divide(w1, w2) for (w1, w2) in zip(weights1, weights2)]
+        elif isinstance(weights1, paddle.Tensor) and isinstance(weights2, paddle.Tensor):
+            return paddle.divide(weights1, weights2)
         else:
             raise NotImplementedError
     else:
         if isinstance(weights1, list):
             return [w1 / scalar for w1 in weights1]
-        elif isinstance(weights1, torch.Tensor):
+        elif isinstance(weights1, paddle.Tensor):
             return  weights1 / scalar
         else:
             raise NotImplementedError
@@ -556,7 +556,7 @@ def get_sum_weights(weights1, weights2):
     """ Produce a direction from 'weights1' to 'weights2'."""
     if isinstance(weights1, list) and isinstance(weights2, list):
         return [w2 + w1 for (w1, w2) in zip(weights1, weights2)]
-    elif isinstance(weights1, torch.Tensor) and isinstance(weights2, torch.Tensor):
+    elif isinstance(weights1, paddle.Tensor) and isinstance(weights2, paddle.Tensor):
         return weights2 + weights1
     else:
         raise NotImplementedError
@@ -565,7 +565,7 @@ def get_diff_weights(weights1, weights2):
     """ Produce a direction from 'weights1' to 'weights2'."""
     if isinstance(weights1, list) and isinstance(weights2, list):
         return [w2 - w1 for (w1, w2) in zip(weights1, weights2)]
-    elif isinstance(weights1, torch.Tensor) and isinstance(weights2, torch.Tensor):
+    elif isinstance(weights1, paddle.Tensor) and isinstance(weights2, paddle.Tensor):
         return weights2 - weights1
     else:
         raise NotImplementedError
@@ -574,9 +574,9 @@ def get_diff_weights(weights1, weights2):
 def get_diff_weights_abs(weights1, weights2):
     """ Produce a direction from 'weights1' to 'weights2'."""
     if isinstance(weights1, list) and isinstance(weights2, list):
-        return [torch.abs(w2 - w1) for (w1, w2) in zip(weights1, weights2)]
-    elif isinstance(weights1, torch.Tensor) and isinstance(weights2, torch.Tensor):
-        return torch.abs(weights2 - weights1)
+        return [paddle.abs(w2 - w1) for (w1, w2) in zip(weights1, weights2)]
+    elif isinstance(weights1, paddle.Tensor) and isinstance(weights2, paddle.Tensor):
+        return paddle.abs(weights2 - weights1)
     else:
         raise NotImplementedError
 
@@ -618,8 +618,8 @@ def get_tensor_rotation(tensor1, tensor2):
     logging.info(tensor2.dtype)
     # print(tensor1.dtype)
     # print(tensor2.dtype)
-    # return F.cosine_similarity(torch.flatten(tensor1), torch.flatten(tensor2), dim=0)
-    return F.cosine_similarity(tensor1.view(-1), tensor2.view(-1), dim=0)
+    # return F.cosine_similarity(paddle.flatten(tensor1), paddle.flatten(tensor2), dim=0)
+    return F.cosine_similarity(tensor1.reshape(-1), tensor2.reshape(-1), dim=0)
 
 
 def get_named_tensors_rotation(named_tensors1, named_tensors2, layers_list=None):
@@ -639,7 +639,7 @@ def get_named_tensors_rotation(named_tensors1, named_tensors2, layers_list=None)
 
 def add_gaussian_noise_named_tensors(named_tensor, mean=0.0, std=0.001):
     for name, _ in named_tensor.items():
-        noise = torch.normal(mean=torch.ones(named_tensor[name].shape)*mean, std=std)
+        noise = paddle.normal(mean=paddle.ones(named_tensor[name].shape)*mean, std=std)
         named_tensor[name] += noise.to(named_tensor[name].device)
     return named_tensor
 
@@ -879,20 +879,20 @@ def get_model_difference(model1, model2, p=2):
 
 
 def list_to_vec(weights):
-    """ Concatnate a numpy list of weights of all layers into one torch vector.
+    """ Concatnate a numpy list of weights of all layers into one paddle vector.
     """
     v = []
     direction = [d * np.float64(1.0) for d in weights]
     for w in direction:
         if isinstance(w, np.ndarray):
-            w = torch.tensor(w)
+            w = paddle.to_tensor(w).astype(paddle.float32)
         else:
             w = w.clone().detach()
         if w.dim() > 1:
-            v.append(w.view(w.numel()))
+            v.append(w.reshape(w.numel()))
         elif w.dim() == 1:
             v.append(w)
-    return torch.cat(v)
+    return paddle.concat(v)
 
 
 def is_float(value):
@@ -931,11 +931,11 @@ def apply_gradient(param_groups, state, apply_grad_to_model=True):
             # apply the momentum.
             if momentum != 0:
                 if "momentum_buffer" not in param_state:
-                    buf = param_state["momentum_buffer"] = torch.zeros_like(p.data)
-                    buf.mul_(momentum).add_(d_p)
+                    buf = param_state["momentum_buffer"] = paddle.zeros_like(p.data)
+                    buf.matmul(paddle.to_tensor(momentum)).add_(d_p)
                 else:
                     buf = param_state["momentum_buffer"]
-                    buf.mul_(momentum).add_(d_p, alpha=1 - dampening)
+                    buf.matmul(paddle.to_tensor(momentum)).add_(d_p, alpha=1 - dampening)
                 if nesterov:
                     d_p = d_p.add(momentum, buf)
                 else:
@@ -1098,7 +1098,7 @@ def get_per_cls_weights(cls_num_list, beta=0.9999):
     effective_num = 1.0 - np.power(beta, cls_num_list)
     per_cls_weights = (1.0 - beta) / np.array(effective_num)
     per_cls_weights = per_cls_weights / np.sum(per_cls_weights) * len(cls_num_list)
-    # per_cls_weights = torch.FloatTensor(per_cls_weights).cuda(args.gpu)
+    # per_cls_weights = paddle.FloatTensor(per_cls_weights).cuda(args.gpu)
 
 
 
@@ -1106,13 +1106,13 @@ def get_per_cls_weights(cls_num_list, beta=0.9999):
 def optimizer_to(optim, device):
     for param in optim.state.values():
         # Not sure there are any global tensors in the state dict
-        if isinstance(param, torch.Tensor):
+        if isinstance(param, paddle.Tensor):
             param.data = param.data.to(device)
             if param._grad is not None:
                 param._grad.data = param._grad.data.to(device)
         elif isinstance(param, dict):
             for subparam in param.values():
-                if isinstance(subparam, torch.Tensor):
+                if isinstance(subparam, paddle.Tensor):
                     subparam.data = subparam.data.to(device)
                     if subparam._grad is not None:
                         subparam._grad.data = subparam._grad.data.to(device)

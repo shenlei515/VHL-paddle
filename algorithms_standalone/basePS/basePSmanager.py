@@ -7,7 +7,6 @@ from abc import ABC, abstractmethod
 import random
 
 import numpy as np
-import torch
 import wandb
 
 
@@ -233,9 +232,6 @@ class BasePSManager(object):
 
 
                 if self.args.VHL:
-
-
-
                     if self.args.VHL_label_from == "dataset":
                         if self.args.generative_dataset_shared_loader:
                             shared_params_for_simulation["train_generative_dl_dict"] = self.aggregator.trainer.train_generative_dl_dict

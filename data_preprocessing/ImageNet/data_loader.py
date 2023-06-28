@@ -25,7 +25,7 @@ class Cutout(object):
         self.length = length
 
     def __call__(self, img):
-        h, w = img.size(1), img.size(2)
+        h, w = img.shape[1], img.shape[2]
         mask = np.ones((h, w), np.float32)
         y = np.random.randint(h)
         x = np.random.randint(w)

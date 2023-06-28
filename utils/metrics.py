@@ -1,6 +1,6 @@
 import math
 
-import torch
+import paddle
 
 class Metrics(object):
     """
@@ -100,7 +100,7 @@ class Metrics(object):
         # metric_stat[loss_name] = loss.item()
 
         maxk = max(self.topks)
-        batch_size = target.size(0)
+        batch_size = target.shape[0]
 
         _, pred = output.topk(maxk, 1, True, True)
         if "pred_shift" in kwargs:
@@ -108,13 +108,13 @@ class Metrics(object):
             pred[pred > pred_shift] = pred[pred > pred_shift] - pred_shift
 
         pred = pred.t()
-        correct = pred.eq(target.view(1, -1).expand_as(pred))
+        correct = pred.equal(target.reshape([1, -1]).expand_as(pred))
 
         for topk in self.topks:
-            correct_k = correct[:topk].view(-1).float().sum(0, keepdim=True)
-            # res.append(correct_k.mul_(100.0 / batch_size).item())
-            metric_stat["Acc{}".format(topk)] = correct_k.mul_(100.0 / batch_size).item()
-            # metric_stat[f"{acc_name}{topk}"] = correct_k.mul_(100.0 / batch_size).item()
+            correct_k = correct[:topk].reshape([-1]).astype(paddle.float32).sum(0, keepdim=True)
+            # res.append(correct_k.matmul(100.0 / batch_size).item())
+            metric_stat["Acc{}".format(topk)] = correct_k.matmul(paddle.to_tensor(100.0 / batch_size)).item()
+            # metric_stat[f"{acc_name}{topk}"] = correct_k.matmul(100.0 / batch_size).item()
         return metric_stat
 
 
@@ -123,11 +123,11 @@ class Metrics(object):
         # metric_stat["Loss"] = loss.item()
         metric_stat["Loss"] = loss
         predicted = (output > .5).int()
-        correct = predicted.eq(target).sum(axis=-1).eq(target.size(1)).sum()
+        correct = predicted.equal(target).sum(axis=-1).equal(target.shape[1]).sum()
         true_positive = ((target * predicted) > .1).int().sum(axis=-1)
         metric_stat["Precision"] = true_positive / (predicted.sum(axis=-1) + 1e-13)
         metric_stat["Recall"] = true_positive / (target.sum(axis=-1) + 1e-13)
-        metric_stat["Acc"] = correct.mul_(100.0 / target.size(0)).item()
+        metric_stat["Acc"] = correct.matmul(paddle.to_tensor(100.0 / target.shape[0])).item()
         return metric_stat
 
     def _ptb_metric(self, loss, output, target, **kwargs):

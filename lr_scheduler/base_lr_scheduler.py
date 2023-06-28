@@ -1,8 +1,7 @@
 import logging
 from abc import ABC, abstractmethod
 
-import torch
-from torch.optim import Optimizer
+from paddle.optimizer import Optimizer
 
 
 

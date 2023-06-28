@@ -3,11 +3,10 @@ import os, sys
 import random
 
 import numpy as np
-import torch.utils.data as data
-import torchvision
+import paddle.io as data
 from PIL import Image
-import torch
-import torchvision.transforms as transforms
+import paddle
+import paddle.vision.transforms as transforms
 
 
 IMG_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif', '.tiff', '.webp')
@@ -28,7 +27,7 @@ def data_transforms_generative(resize=None, augmentation="default", dataset_type
 
     if "grayscale" in augmentation:
         train_transform.transforms.append(
-            torchvision.transforms.Grayscale(num_output_channels=1)
+            paddle.vision.transforms.Grayscale(num_output_channels=1)
         )
         GENERETIVE_MEAN = (0.5)
         GENERETIVE_STD = (0.25)
@@ -149,7 +148,7 @@ def accimage_loader(path):
 
 
 def default_loader(path):
-    from torchvision import get_image_backend
+    from paddle.vision.image import get_image_backend
     if get_image_backend() == 'accimage':
         return accimage_loader(path)
     else:

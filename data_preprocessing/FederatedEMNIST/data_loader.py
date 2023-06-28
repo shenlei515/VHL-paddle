@@ -36,7 +36,7 @@ class TensorDataset(torch.utils.data.Dataset):
 
     def __init__(self, data_tensor, target_tensor=None, transforms=None, target_transforms=None):
         if target_tensor is not None:
-            assert data_tensor.size(0) == target_tensor.size(0)
+            assert data_tensor.shape[0] == target_tensor.shape[0]
         self.data_tensor = data_tensor
         self.target_tensor = target_tensor
 
@@ -68,7 +68,7 @@ class TensorDataset(torch.utils.data.Dataset):
         return data_tensor, target_tensor
 
     def __len__(self):
-        return self.data_tensor.size(0)
+        return self.data_tensor.shape[0]
 
 
 def get_dataloader(dataset, data_dir, train_bs, test_bs, client_index=None):

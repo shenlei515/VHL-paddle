@@ -4,17 +4,16 @@ import math
 import functools
 
 import numpy as np
-import torch
-import torch.utils.data as data
-import torchvision.transforms as transforms
-from torchvision.datasets import (
-    CIFAR10,
-    CIFAR100,
-    SVHN,
+import paddle
+import paddle.io as data
+from paddle.vision.datasets import (
+    Cifar10,
+    Cifar100,
     FashionMNIST,
     MNIST,
 )
 
+from torchvision.datasets import SVHN
 
 from .cifar10.datasets import CIFAR10_truncated_WO_reload
 from .cifar100.datasets import CIFAR100_truncated_WO_reload
@@ -49,8 +48,8 @@ NORMAL_DATASET_LIST = ["cifar10", "cifar100", "SVHN",
 class Data_Loader(object):
 
     full_data_obj_dict = {
-        "cifar10": CIFAR10,
-        "cifar100": CIFAR100,
+        "cifar10": Cifar10,
+        "cifar100": Cifar100,
         "SVHN": SVHN,
         "mnist": MNIST, 
         "fmnist": FashionMNIST,
@@ -206,14 +205,28 @@ class Data_Loader(object):
             train_ds = self.full_data_obj(self.datadir,  "train", download=False, transform=train_transform, target_transform=None)
             test_ds = self.full_data_obj(self.datadir,  "test", download=False, transform=test_transform, target_transform=None)
         elif self.dataset == "Tiny-ImageNet-200":
-            train_ds = self.full_data_obj(self.datadir,  train=True, transform=train_transform, alpha=None)
-            test_ds = self.full_data_obj(self.datadir,  train=False, transform=test_transform, alpha=None)
+            train_ds = self.full_data_obj(self.datadir,  mode='train', transform=train_transform, alpha=None)
+            test_ds = self.full_data_obj(self.datadir,  mode='test', transform=test_transform, alpha=None)
         else:
-            train_ds = self.full_data_obj(self.datadir,  train=True, download=False, transform=train_transform)
-            test_ds = self.full_data_obj(self.datadir,  train=False, download=False, transform=test_transform)
+            train_ds = self.full_data_obj(self.datadir,  mode='train', download=False, transform=train_transform)
+            test_ds = self.full_data_obj(self.datadir,  mode='test', download=False, transform=test_transform)
 
+        # print("zipped",list(zip(*train_ds.data)))
+        train_ds.data, train_ds.targets = list(zip(*train_ds.data))
+        # test_ds.data, test_ds.targets = list(zip(*test_ds.data))
+        print("train_ds.data before to_tensor", train_ds.data)
+        print(len(train_ds.data))
+        print("device in loader.py", paddle.device.get_device())
+        
+        # train_ds.data, , test_ds.data, test_ds.targets= map(paddle.to_tensor, [train_ds.data, train_ds.targets, test_ds.data, test_ds.targets])
+        train_ds.data = paddle.to_tensor(train_ds.data, dtype=paddle.float32)
+        train_ds.targets = paddle.to_tensor(train_ds.targets, dtype=paddle.float32)
+        # test_ds.data = paddle.to_tensor(test_ds.data, dtype=pad
+        # test_ds.targets = paddle.to_tensor(test_ds.targets, dtype=paddle.float32)dle.float32)
+        print("train_ds.data after to_tensor", train_ds.data)
         # X_train, y_train = cifar10_train_ds.data, cifar10_train_ds.targets
         # X_test, y_test = cifar10_test_ds.data, cifar10_test_ds.targets
+        print("type(train_ds)", train_ds)
 
         return train_ds, test_ds
 
@@ -249,7 +262,7 @@ class Data_Loader(object):
     def get_dataloader(self, train_ds, test_ds, shuffle=True, drop_last=False, train_sampler=None, num_workers=1):
         logging.info(f"shuffle: {shuffle}, drop_last:{drop_last}, train_sampler:{train_sampler} ")
         train_dl = data.DataLoader(dataset=train_ds, batch_size=self.batch_size, shuffle=shuffle,
-                                drop_last=drop_last, sampler=train_sampler, num_workers=num_workers)
+                                drop_last=drop_last, batch_sampler=train_sampler, num_workers=num_workers)
         test_dl = data.DataLoader(dataset=test_ds, batch_size=self.batch_size, shuffle=False,
                                 drop_last=False, num_workers=num_workers)
         return train_dl, test_dl

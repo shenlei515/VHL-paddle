@@ -1,11 +1,11 @@
 import logging
 
 import numpy as np
-import torch.utils.data as data
+import paddle
+import paddle.io as data
 from PIL import Image
-from torchvision.datasets import CIFAR10
-import torch
-import torchvision.transforms as transforms
+from paddle.vision.datasets.cifar import Cifar10
+import paddle.vision.transforms as transforms
 
 from data_preprocessing.utils.utils import Cutout
 
@@ -30,7 +30,8 @@ def data_transforms_cifar10(resize=32, augmentation="default", dataset_type="ful
     if dataset_type == "full_dataset":
         pass
     elif dataset_type == "sub_dataset":
-        train_transform.transforms.append(transforms.ToPILImage())
+        # train_transform.transforms.append(transforms.ToPILImage())
+        pass
     else:
         raise NotImplementedError
 
@@ -79,7 +80,7 @@ def data_transforms_cifar10(resize=32, augmentation="default", dataset_type="ful
     #             transforms.ToTensor(),
     #             transforms.Normalize(CIFAR_MEAN, CIFAR_STD),
     #         ])
-    #         logging.info(f"CIFAR10 dataset augmentation: default, resize: {resize}")
+    #         logging.info(f"Cifar10 dataset augmentation: default, resize: {resize}")
     #     else:
     #         train_transform = transforms.Compose([
     #             transforms.ToPILImage(),
@@ -140,7 +141,7 @@ class CIFAR10_truncated(data.Dataset):
 
     def __build_truncated_dataset__(self):
         print("download = " + str(self.download))
-        cifar_dataobj = CIFAR10(self.root, self.train, self.transform, self.target_transform, self.download)
+        cifar_dataobj = Cifar10(self.root, self.train, self.transform, self.target_transform, self.download)
 
         if self.train:
             # print("train member of the class: {}".format(self.train))
@@ -203,18 +204,21 @@ class CIFAR10_truncated_WO_reload(data.Dataset):
 
     def __build_truncated_dataset__(self):
         # print("download = " + str(self.download))
-        # cifar_dataobj = CIFAR10(self.root, self.train, self.transform, self.target_transform, self.download)
-
+        # cifar_dataobj = Cifar10(self.root, self.train, self.transform, self.target_transform, self.download)
         if self.train:
             # print("train member of the class: {}".format(self.train))
             # data = cifar_dataobj.train_data
             data = self.full_dataset.data
             targets = np.array(self.full_dataset.targets)
         else:
-            data = self.full_dataset.data
-            targets = np.array(self.full_dataset.targets)
+            data, targets = list(zip(*self.full_dataset.data))
+            data = paddle.to_tensor(data, dtype=paddle.float32)
+            targets = paddle.to_tensor(targets, dtype=paddle.float32)
 
         if self.dataidxs is not None:
+            # print("data", data)
+            # print("targets", targets)
+            # print("self.dataidx", self.dataidxs)
             data = data[self.dataidxs]
             targets = targets[self.dataidxs]
 
@@ -234,9 +238,17 @@ class CIFAR10_truncated_WO_reload(data.Dataset):
         Returns:
             tuple: (image, targets) where targets is index of the targets class.
         """
+        # print("device in datasets", paddle.device.get_device())
+        # index = paddle.to_tensor(index, dtype= paddle.int64)
+        # print("index", index)
+        # print("index.dtype", type(index))
+        # index = paddle.to_tensor(index, place=paddle.CPUPlace())
         img, targets = self.data[index], self.targets[index]
-
+        img = np.reshape(img, [3, 32, 32])
+        img = img.transpose([1, 2, 0])
+        
         if self.transform is not None:
+            Image.fromarray(np.uint8(img)).convert('RGB')
             img = self.transform(img)
 
         if self.target_transform is not None:

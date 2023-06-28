@@ -5,13 +5,9 @@ import math
 import logging
 
 import torch
-import torch.utils.data as data
-import torchvision.transforms as transforms
-from torchvision.datasets import CIFAR10
-from torch.utils.data.distributed import DistributedSampler
-
-from .transform import data_transforms_cifar10
-
+import paddle.io as data
+import paddle.vision.transforms as transforms
+from paddle.vision.datasets.cifar import Cifar10
 
 def load_iid_cifar10(dataset, data_dir, partition_method, 
         partition_alpha, client_number, batch_size, rank=0, args=None):
@@ -32,10 +28,10 @@ def load_iid_cifar10(dataset, data_dir, partition_method,
         transforms.Normalize(mean=CIFAR_MEAN , std=CIFAR_STD),
         ])
 
-    train_dataset = CIFAR10(root=data_dir, train=True,
+    train_dataset = Cifar10(root=data_dir, train=True,
                             transform=train_transform, download=False)
 
-    test_dataset = CIFAR10(root=data_dir, train=False,
+    test_dataset = Cifar10(root=data_dir, train=False,
                             transform=test_transform, download=False)
 
     if args.mode in ['distributed', 'centralized']:

@@ -1,6 +1,6 @@
 import logging 
 import h5py
-import torch
+import paddle
 import numpy as np
 
 def setup_save_activation_path(save_checkpoints_config,
@@ -42,7 +42,7 @@ def register_get_activation_hooks(model, layers_list):
 
 def get_dataset_activation(trainloader, model, activation, device, save_activation_path=None):
     activation_dataset = {}
-    with torch.no_grad():
+    with paddle.no_grad():
         for i, data in enumerate(trainloader):
             # if i == max_iter:
             #     break
@@ -54,7 +54,7 @@ def get_dataset_activation(trainloader, model, activation, device, save_activati
                 if layer not in activation_dataset:
                     activation_dataset[layer] = value
                 else:
-                    activation_dataset[layer] = torch.cat((activation_dataset[layer], value), 0)
+                    activation_dataset[layer] = paddle.concat((activation_dataset[layer], value), 0)
             logging.info('Got %f th iter activations...' %(i))
 
         for layer, value in activation_dataset.items():
@@ -79,7 +79,7 @@ def load_dataset_activation(save_activation_path, layers_list=None):
                 logging.info("Skip layer: {}, not in input layer list {}".format(
                     layer, layers_list))
                 continue
-        act[layer] = torch.as_tensor(np.array(act_file[layer]))
+        act[layer] = paddle.to_tensor(np.array(act_file[layer]))
         logging.info("loaded layer: {}, data shape: {}".format(layer, act_file[layer].shape) )
 
     if layers_list is not None:

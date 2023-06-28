@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from io import StringIO
 
 import numpy as np
-import torch
+import paddle
 
 
 class Perf_Timer(object):
@@ -23,7 +23,7 @@ class Perf_Timer(object):
         self.verbosity_level = verbosity_level
         self.log_fn = log_fn if log_fn is not None else self._default_log_fn
         self.skip_first = skip_first
-        self.cuda_available = torch.cuda.is_available() and on_cuda
+        self.cuda_available = paddle.is_compiled_with_cuda() and on_cuda
 
         self.reset()
 
@@ -110,7 +110,7 @@ class Perf_Timer(object):
     def _cuda_sync(self):
         """Finish all asynchronous GPU computations to get correct timings"""
         if self.cuda_available:
-            torch.cuda.synchronize()
+            paddle.device.cuda.synchronize()
 
     def _default_log_fn(self, _, values, tags):
         label = tags["label"]

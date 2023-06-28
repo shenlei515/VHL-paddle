@@ -2,10 +2,10 @@ import logging
 import random
 
 import numpy as np
-import torch
-import torch.utils.data as data
-import torchvision.transforms as transforms
-from torchvision.datasets import FashionMNIST
+import paddle
+import paddle.io as data
+from paddle.vision.datasets import FashionMNIST
+import paddle.vision.transforms as transforms
 
 from .datasets import FashionMNIST_truncated, FashionMNIST_truncated_WO_reload
 
@@ -34,7 +34,7 @@ class Cutout(object):
         self.length = length
 
     def __call__(self, img):
-        h, w = img.size(1), img.size(2)
+        h, w = img.shape[1], img.shape[2]
         mask = np.ones((h, w), np.float32)
         y = np.random.randint(h)
         x = np.random.randint(w)
@@ -45,7 +45,7 @@ class Cutout(object):
         x2 = np.clip(x + self.length // 2, 0, w)
 
         mask[y1: y2, x1: x2] = 0.
-        mask = torch.from_numpy(mask)
+        mask = paddle.to_tensor(mask).astype(np.float32)
         mask = mask.expand_as(img)
         img *= mask
         return img

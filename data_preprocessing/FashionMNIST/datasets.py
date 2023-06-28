@@ -1,11 +1,10 @@
 import logging
 
 import numpy as np
-import torch.utils.data as data
+import paddle.io as data
 from PIL import Image
-from torchvision.datasets import FashionMNIST
-import torch
-import torchvision.transforms as transforms
+from paddle.vision.datasets import FashionMNIST
+import paddle.vision.transforms as transforms
 
 from data_preprocessing.utils.utils import Cutout
 

@@ -4,9 +4,8 @@ import time
 
 from numpy.core.getlimits import _register_type
 
-import torch
-import torch.optim as optim
-import torch.nn.functional as F
+import paddle
+import paddle.nn.functional as F
 
 
 import numpy as np
@@ -100,17 +99,18 @@ class PSAggregator(object):
         # ================================================
         # if self.args.pretrained:
         #     ckt = torch.load(args.pretrained_dir)
-        #     self.trainer.model.load_state_dict(ckt["model_state_dict"])
+        #     self.trainer.model.set_state_dict(ckt["model_state_dict"])
         if self.args.pretrained:
             if self.args.model == "inceptionresnetv2":
                 pass
             else:
-                ckt = torch.load(self.args.pretrained_dir)
+                # ckt = torch.load(self.args.pretrained_dir)
+                ckt = paddle.load(self.args.pretrained_dir)
                 if "model_state_dict" in ckt:
-                    self.trainer.model.load_state_dict(ckt["model_state_dict"])
+                    self.trainer.model.set_state_dict(ckt["model_state_dict"])
                 else:
                     logging.info(f"ckt.keys: {list(ckt.keys())}")
-                    self.trainer.model.load_state_dict(ckt)
+                    self.trainer.model.set_state_dict(ckt)
         # ================================================
 
 
@@ -303,7 +303,7 @@ class PSAggregator(object):
                     # logging.info("averaged_params[k].dtype: {}, local_model_params[k].dtype: {}".format(
                     #     averaged_params[k].dtype, local_model_params[k].dtype
                     # ))
-                    averaged_params[k] += (local_model_params[k] * w).type(averaged_params[k].dtype)
+                    averaged_params[k] += (local_model_params[k] * w).astype(averaged_params[k].dtype)
         elif self.args.if_get_diff is False:
             logging.debug("Server is averaging model or adding grads!!")
             # for idx in range(self.worker_num):
@@ -403,7 +403,7 @@ class PSAggregator(object):
                     # c_global_para[key].device : {c_global_para[key].device}")
 
                     c_global_para[key] += check_type(total_delta[key], c_global_para[key].type())
-                self.c_model_global.load_state_dict(c_global_para)
+                self.c_model_global.set_state_dict(c_global_para)
                 global_other_params["c_model_global"] = c_global_para
 
         else:
@@ -497,7 +497,7 @@ class PSAggregator(object):
             x, labels = train_batch_data
             # if batch_idx > 5:
             #     break
-            x, labels = x.to(device), labels.to(device)
+            x, labels = paddle.to_tensor(x, place=device), paddle.to_tensor(labels, place=device)
             self.trainer.optimizer.zero_grad()
 
             if self.args.model_out_feature:

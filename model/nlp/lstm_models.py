@@ -23,7 +23,7 @@ class SequenceWise(nn.Module):
         """
         Collapses input of dim T*N*H to (T*N)*H, and applies to a module.
         Allows handling of variable sequence lengths and minibatch sizes.
-        :param module: Module to apply input to.
+        :param module: Layer to apply input to.
         """
         super(SequenceWise, self).__init__()
         self.module = module

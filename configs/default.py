@@ -21,13 +21,13 @@ _C.exp_mode = 'debug'    # debug or normal or ready
 # ---------------------------------------------------------------------------- #
 # wandb settings
 # ---------------------------------------------------------------------------- #
-_C.entity = None
+_C.entity = "leishen"
 _C.project = 'test'
 _C.wandb_upload_client_list = [0, 1] # 0 is the server
 _C.wandb_save_record_dataframe = False
-_C.wandb_offline = False
+_C.wandb_offline = True
 _C.wandb_record = True
-
+_C.wandb_key = '52b3fac9fa69e6ffc4a0160f881c732eca640dbc'
 
 # ---------------------------------------------------------------------------- #
 # mode settings
@@ -38,8 +38,8 @@ _C.test = True
 # ---------------------------------------------------------------------------- #
 # distributed settings
 # ---------------------------------------------------------------------------- #
-_C.client_num_in_total = 100
-_C.client_num_per_round = 10
+_C.client_num_in_total = 10
+_C.client_num_per_round = 1
 _C.instantiate_all = True
 _C.clear_buffer = True
 _C.aggregate_in_parallel = False
@@ -61,7 +61,7 @@ _C.gpu_util_key = None
 _C.gpu_util_parse = None
 _C.cluster_name = None
 
-_C.gpu_index = 0  # for centralized training or standalone usage
+_C.gpu_index = 6  # for centralized training or standalone usage
 
 # ---------------------------------------------------------------------------- #
 # task settings
@@ -77,13 +77,15 @@ _C.task = 'classification' #    ["classification", "stackoverflow_lr", "ptb"]
 _C.dataset = 'cifar10'
 _C.dataset_aug = "default"
 _C.dataset_resize = False
-_C.dataset_load_image_size = 32
+_C.dataset_load_image_size = 32 # batch size shouldn't be changed here
 _C.num_classes = 10
 _C.data_efficient_load = True    #  Efficiently load dataset, only load one full dataset, but split to many small ones.
 _C.data_save_memory_mode = False    #  Clear data iterator, for saving memory, but may cause extra time.
-_C.data_dir = './../../../data/cifar10'
-_C.partition_method = 'iid'
-_C.partition_alpha = 0.5
+_C.data_dir = './../../../data/cifar10-gz/cifar-10-python.tar.gz'
+# _C.partition_method = 'iid'
+_C.partition_method = 'hetero'
+# _C.partition_alpha = 0.05
+_C.partition_alpha = 0.1
 _C.dirichlet_min_p = None #  0.001    set dirichlet min value for letting each client has samples of each label
 _C.dirichlet_balance = False # This will try to balance dataset partition among all clients to make them have similar data amount
 
@@ -177,14 +179,19 @@ _C.tSNE_track_epoch_list = [0, 1, 5, 10, 20, 50, 90]
 # ---------------------------------------------------------------------------- #
 # model
 # ---------------------------------------------------------------------------- #
-_C.model = 'resnet20'
+
+# _C.model = 'resnet20_cifar'
+# _C.model = 'resnet8_cifar'
+_C.model = 'resnet18_v2'
 _C.model_input_channels = 3
 _C.model_out_feature = False
 _C.model_out_feature_layer = "last"
 _C.model_feature_dim = 512
 _C.model_output_dim = 10
 _C.pretrained = False
+# _C.pretrained = True
 _C.pretrained_dir = " "
+# _C.pretrained_dir = "../../pretrained/resnet20-12fca82f.th"
 _C.pretrained_submodel = False
 _C.pretrained_layers = "Before-layer2"
 _C.pretrained_model_name = None
@@ -235,16 +242,16 @@ _C.auxiliary_data_dir_list = ["./../../../data/generative/style_GAN_init"]
 # ---------------------------------------------------------------------------- #
 _C.VHL = False
 _C.VHL_save_images = False
-_C.VHL_data = 'generator'          #  Or ``dataset''
+_C.VHL_data = 'dataset'          #  Or ``dataset''
 _C.VHL_dataset_list = ["style_GAN_init"]
 _C.VHL_data_dir_list = ["./../../../data/generative/style_GAN_init"]
 _C.VHL_dataset_batch_size = 128
 _C.VHL_dataset_from_server = True
 # extra means add new classes, 
 # patch means add to the save position.
-_C.VHL_label_from = "generator"    #  Or ``distribution'', need VHL_generator_num or ``dataset''
+_C.VHL_label_from = "dataset"    #  Or ``distribution'', need VHL_generator_num or ``dataset''
 _C.VHL_label_style = "extra"
-_C.VHL_generator = 'mini_generator_out_32'  # style_GAN_v2, style_GAN_v2_G
+_C.VHL_generator = 'style_GAN_v2_G'  # style_GAN_v2, style_GAN_v2_G
 _C.VHL_generator_from_server = True
 _C.VHL_num = 1
 _C.VHL_generator_num = 1
@@ -338,7 +345,7 @@ _C.trainer_type = 'normal'
 # ---------------------------------------------------------------------------- #
 # algorithm settings
 # ---------------------------------------------------------------------------- #
-_C.algorithm = 'PSGD'
+_C.algorithm = 'FedAvg'
 _C.psgd_exchange = 'grad' # 'grad', 'model'
 _C.psgd_grad_sum = False
 _C.psgd_grad_debug = False
@@ -398,14 +405,17 @@ _C.is_biased = 0
 # comm_round is only used in FedAvg.
 # ---------------------------------------------------------------------------- #
 _C.max_epochs = 90
-_C.global_epochs_per_round = 1
-_C.comm_round = 90
+_C.global_epochs_per_round = 1 # local training epoch 
+_C.comm_round = 1
 _C.client_optimizer = 'no' # Please indicate which optimizer is used, if no, set it as 'no'
 _C.server_optimizer = 'no'
-_C.batch_size = 32
+# _C.batch_size = 32
+_C.batch_size = 128
 _C.lr = 0.1
 _C.wd = 0.0001
-_C.momentum = 0.9
+# _C.wd = 0
+# _C.momentum = 0.9
+_C.momentum = 0.0
 _C.nesterov = False
 _C.clip_grad = False
 
@@ -414,10 +424,13 @@ _C.clip_grad = False
 # ---------------------------------------------------------------------------- #
 # Learning rate schedule parameters
 # ---------------------------------------------------------------------------- #
-_C.sched = 'no'   # no (no scheudler), StepLR MultiStepLR  CosineAnnealingLR
-_C.lr_decay_rate = 0.992
+# _C.sched = 'no'   # no (no scheudler), StepLR MultiStepLR  CosineAnnealingLR
+# _C.sched = 'MultiStepLR'
+_C.sched = 'no'
+# _C.lr_decay_rate = 0.992
+_C.lr_decay_rate = 0.1
 _C.step_size = 1
-_C.lr_milestones = [30, 60]
+_C.lr_milestones = [30,45,60,75]
 _C.lr_T_max = 10
 _C.lr_eta_min = 0
 _C.lr_warmup_type = 'constant' # constant, gradual.
@@ -429,9 +442,8 @@ _C.lr_warmup_value = 0.1
 
 _C.freeze_backbone = False
 _C.freeze_backbone_layers = "Before-layer2"
-_C.freeze_bn = False
-
-
+# _C.freeze_bn = False
+_C.freeze_bn = True
 
 
 # ---------------------------------------------------------------------------- #
@@ -467,16 +479,6 @@ _C.pruning_group_size = 1
 _C.maximum_pruning_iterations = 0
 _C.maximum_pruning_iterations = 0
 
-
-
-
-
-
-
-
-
-
-
 # ---------------------------------------------------------------------------- #
 # Regularation
 # ---------------------------------------------------------------------------- #
@@ -503,9 +505,5 @@ _C.level = 'INFO' # 'INFO' or 'DEBUG'
 # ---------------------------------------------------------------------------- #
 _C.ci = 0
 _C.seed = 0
-
-
-
-
 
 
